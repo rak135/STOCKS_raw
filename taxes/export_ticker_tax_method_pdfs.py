@@ -17,13 +17,14 @@ DEFAULT_INPUT_DIR = Path(r"C:\DATA\PROJECTS\STOCKS_raw\.csv")
 DEFAULT_OUTPUT_DIR = Path(r"C:\DATA\PROJECTS\STOCKS_raw\taxes\.pdf exports tax methods")
 DEFAULT_TAX_METHODS_FILE = Path(r"C:\DATA\PROJECTS\STOCKS_raw\taxes\tax_methods.toml")
 
-ALLOWED_METHODS = {"fifo", "lifo", "max_gains", "min_gains"}
+ALLOWED_METHODS = {"fifo", "lifo", "max_gains", "min_gains", "time_test_max"}
 QUANTITY_TOLERANCE = Decimal("0.00001")
 METHOD_LABELS = {
     "fifo": "FIFO",
     "lifo": "LIFO",
     "max_gains": "max_gains",
     "min_gains": "min_gains",
+    "time_test_max": "TIME_TEST_MAX",
 }
 
 
@@ -596,6 +597,10 @@ def _lot_taxable_unit_pl(lot: BuyLot, sell_tx: Transaction) -> Decimal:
     return sell_tx.price - lot.price
 
 
+def _lot_total_unit_pl(lot: BuyLot, sell_tx: Transaction) -> Decimal:
+    return sell_tx.price - lot.price
+
+
 def _ordered_lots_for_method(lots: List[BuyLot], sell_tx: Transaction, method: str) -> List[BuyLot]:
     available = [lot for lot in lots if lot.quantity > 0]
 
@@ -612,6 +617,15 @@ def _ordered_lots_for_method(lots: List[BuyLot], sell_tx: Transaction, method: s
         return sorted(
             available,
             key=lambda lot: (_lot_taxable_unit_pl(lot, sell_tx),) + _lot_identity_key(lot),
+        )
+    if method == "time_test_max":
+        return sorted(
+            available,
+            key=lambda lot: (
+                0 if is_time_test_passed(lot.buy_date, sell_tx.date) else 1,
+                -_lot_total_unit_pl(lot, sell_tx) if is_time_test_passed(lot.buy_date, sell_tx.date) else _lot_taxable_unit_pl(lot, sell_tx),
+            )
+            + _lot_identity_key(lot),
         )
     raise ValueError(f"Unsupported tax method: {method}")
 
