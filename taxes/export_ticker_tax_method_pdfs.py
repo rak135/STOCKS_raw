@@ -76,6 +76,7 @@ class MatchDetail:
     sell_price: Decimal
     holding_period_days: int
     time_test_passed: bool
+    total_pl: Decimal
     taxable_pl: Decimal
     buy_source_file: str
     buy_row_number: int
@@ -90,6 +91,7 @@ class SellMatch:
     sell_row_number: int
     method: str
     matches: List[MatchDetail]
+    total_pl: Decimal
     total_taxable_pl: Decimal
 
 
@@ -100,9 +102,18 @@ class BuyUsage:
     sell_price: Decimal
     holding_period_days: int
     time_test_passed: bool
+    total_pl: Decimal
     taxable_pl: Decimal
     sell_source_file: str
     sell_row_number: int
+
+
+@dataclass
+class YearSummary:
+    total_income: Decimal
+    total_pl: Optional[Decimal]
+    taxable_pl: Optional[Decimal]
+    over_three_year_pl: Optional[Decimal]
 
 
 @dataclass
@@ -635,9 +646,10 @@ def match_sell_transaction(remaining_lots: List[BuyLot], sell_tx: Transaction, m
 
         matched_qty = min(lot.quantity, remaining_quantity)
         time_test_passed = is_time_test_passed(lot.buy_date, sell_tx.date)
+        total_pl = (sell_price - lot.price) * matched_qty
         taxable_pl = Decimal("0")
         if not time_test_passed:
-            taxable_pl = (sell_price - lot.price) * matched_qty
+            taxable_pl = total_pl
 
         matches.append(
             MatchDetail(
@@ -647,6 +659,7 @@ def match_sell_transaction(remaining_lots: List[BuyLot], sell_tx: Transaction, m
                 sell_price=sell_price,
                 holding_period_days=_holding_period_days(lot.buy_date, sell_tx.date),
                 time_test_passed=time_test_passed,
+                total_pl=total_pl,
                 taxable_pl=taxable_pl,
                 buy_source_file=lot.source_file,
                 buy_row_number=lot.original_row_number,
@@ -659,6 +672,7 @@ def match_sell_transaction(remaining_lots: List[BuyLot], sell_tx: Transaction, m
     if remaining_quantity > 0 and _is_within_quantity_tolerance(remaining_quantity) and matches:
         last_match = matches[-1]
         last_match.matched_qty += remaining_quantity
+        last_match.total_pl += (sell_price - last_match.buy_price) * remaining_quantity
         if not last_match.time_test_passed:
             last_match.taxable_pl += (sell_price - last_match.buy_price) * remaining_quantity
         remaining_quantity = Decimal("0")
@@ -670,6 +684,7 @@ def match_sell_transaction(remaining_lots: List[BuyLot], sell_tx: Transaction, m
         )
 
     remaining_lots[:] = [lot for lot in remaining_lots if lot.quantity > 0]
+    total_pl = sum((match.total_pl for match in matches), Decimal("0"))
     total_taxable_pl = sum((match.taxable_pl for match in matches), Decimal("0"))
 
     return SellMatch(
@@ -680,6 +695,7 @@ def match_sell_transaction(remaining_lots: List[BuyLot], sell_tx: Transaction, m
         sell_row_number=sell_tx.original_row_number,
         method=method,
         matches=matches,
+        total_pl=total_pl,
         total_taxable_pl=total_taxable_pl,
     )
 
@@ -731,6 +747,7 @@ def analyze_ticker(ticker: str, transactions: List[Transaction], config: TaxConf
                     sell_price=match.sell_price,
                     holding_period_days=match.holding_period_days,
                     time_test_passed=match.time_test_passed,
+                    total_pl=match.total_pl,
                     taxable_pl=match.taxable_pl,
                     sell_source_file=sell_match.sell_source_file,
                     sell_row_number=sell_match.sell_row_number,
@@ -774,6 +791,186 @@ def _format_match_status(time_test_passed: bool, holding_period_days: int) -> st
     return f"{'PASS' if time_test_passed else 'FAIL'} | {_format_holding_period(holding_period_days)}"
 
 
+def _compute_year_summary(analysis: TickerAnalysis, year: int, current_year: int) -> YearSummary:
+    year_sells = [tx for tx in analysis.transactions if tx.date.year == year and tx.action == "SELL"]
+    total_income = sum(((_compute_trade_value(tx.quantity, tx.price) or Decimal("0")) for tx in year_sells), Decimal("0"))
+
+    if year >= current_year:
+        return YearSummary(
+            total_income=total_income,
+            total_pl=None,
+            taxable_pl=None,
+            over_three_year_pl=None,
+        )
+
+    sell_matches = analysis.sell_matches_by_year.get(year, [])
+    total_pl = sum((sell_match.total_pl for sell_match in sell_matches), Decimal("0"))
+    taxable_pl = sum((sell_match.total_taxable_pl for sell_match in sell_matches), Decimal("0"))
+    over_three_year_pl = sum(
+        (match.total_pl for sell_match in sell_matches for match in sell_match.matches if match.time_test_passed),
+        Decimal("0"),
+    )
+    return YearSummary(
+        total_income=total_income,
+        total_pl=total_pl,
+        taxable_pl=taxable_pl,
+        over_three_year_pl=over_three_year_pl,
+    )
+
+
+def _build_year_summary_table(summary: YearSummary):
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+
+    rows = [[
+        "Income",
+        "Profit/Loss",
+        "3 years rule PASS (P/L)",
+        "3 years rule FAIL (P/L)",
+    ]]
+    rows.append([
+        _fmt_decimal(summary.total_income),
+        _fmt_decimal(summary.total_pl),
+        _fmt_decimal(summary.over_three_year_pl),
+        _fmt_decimal(summary.taxable_pl),
+    ])
+
+    table = Table(rows, repeatRows=1, colWidths=[115, 115, 115, 115], hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    return table
+
+
+def _sum_optional_decimals(values: List[Optional[Decimal]]) -> Optional[Decimal]:
+    present_values = [value for value in values if value is not None]
+    if not present_values:
+        return None
+    return sum(present_values, Decimal("0"))
+
+
+def _compute_aggregate_year_summaries(
+    analyses: List[TickerAnalysis],
+    current_year: int,
+) -> Dict[int, YearSummary]:
+    years = sorted({year for analysis in analyses for year in analysis.years}, reverse=True)
+    aggregated: Dict[int, YearSummary] = {}
+
+    for year in years:
+        summaries = [_compute_year_summary(analysis, year, current_year) for analysis in analyses if year in analysis.years]
+        aggregated[year] = YearSummary(
+            total_income=sum((summary.total_income for summary in summaries), Decimal("0")),
+            total_pl=_sum_optional_decimals([summary.total_pl for summary in summaries]),
+            taxable_pl=_sum_optional_decimals([summary.taxable_pl for summary in summaries]),
+            over_three_year_pl=_sum_optional_decimals([summary.over_three_year_pl for summary in summaries]),
+        )
+
+    return aggregated
+
+
+def build_all_tickers_year_summary_pdf(
+    analyses: List[TickerAnalysis],
+    output_dir: Path,
+    generated_at: datetime,
+    current_year: int,
+) -> Path:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    output_path = output_dir / "_all_tickers_year_summary.pdf"
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        leftMargin=18,
+        rightMargin=18,
+        topMargin=20,
+        bottomMargin=20,
+        title="All tickers year summary",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading4"]
+    title_style.textColor = colors.black
+    note_style = ParagraphStyle(
+        "SummaryNote",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7,
+        leading=9,
+        textColor=colors.black,
+    )
+
+    aggregated = _compute_aggregate_year_summaries(analyses, current_year)
+    rows = [[
+        "Year",
+        "Income",
+        "Profit/Loss",
+        "3 years rule PASS (P/L)",
+        "3 years rule FAIL (P/L)",
+    ]]
+
+    for year in sorted(aggregated, reverse=True):
+        summary = aggregated[year]
+        rows.append([
+            str(year),
+            _fmt_decimal(summary.total_income),
+            _fmt_decimal(summary.total_pl),
+            _fmt_decimal(summary.over_three_year_pl),
+            _fmt_decimal(summary.taxable_pl),
+        ])
+
+    table = Table(rows, repeatRows=1, colWidths=[54, 95, 95, 120, 120], hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+
+    story = [
+        Paragraph(
+            f"All Tickers Year Summary | Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            title_style,
+        ),
+        Spacer(1, 8),
+        table,
+    ]
+    if current_year in aggregated:
+        story.extend(
+            [
+                Spacer(1, 6),
+                Paragraph(
+                    "Current year follows the same export rule as ticker PDFs. Tax columns remain blank when tax matching is not applied.",
+                    note_style,
+                ),
+            ]
+        )
+
+    doc.build(story)
+    return output_path
+
+
 def _build_year_history_table(
     analysis: TickerAnalysis,
     year: int,
@@ -786,7 +983,8 @@ def _build_year_history_table(
     header_style = styles["header_cell_style"]
     body_style = styles["source_cell_style"]
     lot_style = styles["lot_cell_style"]
-    block_style = styles["block_cell_style"]
+    buy_block_style = styles["buy_block_cell_style"]
+    sell_block_style = styles["sell_block_cell_style"]
 
     sell_matches_by_key = {
         _sell_match_key(sell_match): sell_match
@@ -794,6 +992,7 @@ def _build_year_history_table(
     }
     year_transactions = [tx for tx in analysis.transactions if tx.date.year == year]
     detail_row_indexes: List[int] = []
+    sell_main_row_indexes: List[int] = []
 
     rows = [[
         Paragraph("Date / Block", header_style),
@@ -812,6 +1011,7 @@ def _build_year_history_table(
         is_used_buy = tx.action == "BUY" and bool(buy_usages)
         note_prefix = "* " if is_used_buy else ""
         block_label = f"{note_prefix}{tx.date.isoformat()} {tx.action}"
+        block_style = sell_block_style if tx.action == "SELL" else buy_block_style
 
         if year == current_year and tx.action == "SELL":
             block_label = f"{tx.date.isoformat()} SELL (ignored)"
@@ -826,6 +1026,8 @@ def _build_year_history_table(
             "",
             Paragraph(_source_ref(tx.source_file, tx.original_row_number), body_style),
         ])
+        if tx.action == "SELL":
+            sell_main_row_indexes.append(len(rows) - 1)
 
         if sell_match is not None:
             for lot_number, match in enumerate(sell_match.matches, start=1):
@@ -834,7 +1036,7 @@ def _build_year_history_table(
                     _fmt_decimal(match.matched_qty),
                     _fmt_decimal(match.buy_price),
                     _fmt_decimal(_compute_trade_value(match.matched_qty, match.buy_price)),
-                    _fmt_decimal(match.taxable_pl),
+                    _fmt_decimal(match.total_pl),
                     Paragraph(_format_match_status(match.time_test_passed, match.holding_period_days), lot_style),
                     Paragraph(_source_ref(match.buy_source_file, match.buy_row_number), lot_style),
                 ])
@@ -846,7 +1048,7 @@ def _build_year_history_table(
                     _fmt_decimal(usage.matched_qty),
                     _fmt_decimal(usage.sell_price),
                     _fmt_decimal(_compute_trade_value(usage.matched_qty, usage.sell_price)),
-                    _fmt_decimal(usage.taxable_pl),
+                    _fmt_decimal(usage.total_pl),
                     Paragraph(_format_match_status(usage.time_test_passed, usage.holding_period_days), lot_style),
                     Paragraph(_source_ref(usage.sell_source_file, usage.sell_row_number), lot_style),
                 ])
@@ -883,6 +1085,14 @@ def _build_year_history_table(
             ]
         )
 
+    for row_index in sell_main_row_indexes:
+        style_commands.extend(
+            [
+                ("FONTNAME", (0, row_index), (-1, row_index), "Helvetica-Bold"),
+                ("FONTSIZE", (0, row_index), (-1, row_index), 6.5),
+            ]
+        )
+
     table = Table(rows, repeatRows=1, colWidths=YEAR_HISTORY_COL_WIDTHS)
     table.setStyle(TableStyle(style_commands))
     return table
@@ -897,7 +1107,7 @@ def build_pdf_for_ticker(
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     output_path = output_dir / f"{_safe_pdf_name(analysis.ticker)}.pdf"
     doc = SimpleDocTemplate(
@@ -947,8 +1157,16 @@ def build_pdf_for_ticker(
         leading=7.5,
         textColor=colors.black,
     )
-    block_cell_style = ParagraphStyle(
-        "BlockCell",
+    buy_block_cell_style = ParagraphStyle(
+        "BuyBlockCell",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=6.4,
+        leading=7.4,
+        textColor=colors.black,
+    )
+    sell_block_cell_style = ParagraphStyle(
+        "SellBlockCell",
         parent=styles["BodyText"],
         fontName="Helvetica-Bold",
         fontSize=6.4,
@@ -966,7 +1184,8 @@ def build_pdf_for_ticker(
     exported_styles = {
         "header_cell_style": header_cell_style,
         "source_cell_style": source_cell_style,
-        "block_cell_style": block_cell_style,
+        "buy_block_cell_style": buy_block_cell_style,
+        "sell_block_cell_style": sell_block_cell_style,
         "lot_cell_style": lot_cell_style,
     }
 
@@ -1009,8 +1228,18 @@ def build_pdf_for_ticker(
         heading = f"Year: {year}"
         if year < current_year:
             heading = f"{heading} | Method: {METHOD_LABELS[analysis.year_methods[year]]}"
-        story.append(Paragraph(heading, year_style))
-        story.append(Spacer(1, 4))
+        year_summary_table = _build_year_summary_table(_compute_year_summary(analysis, year, current_year))
+        story.append(CondPageBreak(170))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph(heading, year_style),
+                    Spacer(1, 4),
+                    year_summary_table,
+                ]
+            )
+        )
+        story.append(Spacer(1, 6))
 
         story.append(_build_year_history_table(analysis, year, current_year, exported_styles))
         story.append(Spacer(1, 8))
@@ -1171,6 +1400,7 @@ def main() -> int:
     created_pdfs: List[Path] = []
     for analysis in analyses:
         created_pdfs.append(build_pdf_for_ticker(analysis, args.output_dir, generated_at, config.current_year))
+    all_tickers_summary_pdf = build_all_tickers_year_summary_pdf(analyses, args.output_dir, generated_at, config.current_year)
 
     summary_path = write_summary(args.output_dir, analyses)
     warnings_path = write_warnings(args.output_dir, all_warnings, all_mapping_notes, analyses)
@@ -1181,6 +1411,7 @@ def main() -> int:
     print(f"Valid BUY/SELL transactions parsed: {len(all_transactions)}")
     print(f"Ticker PDFs created: {len(created_pdfs)}")
     print(f"Ignored current-year SELL transactions: {ignored_current_year_sell_count}")
+    print(f"All-tickers year summary PDF: {all_tickers_summary_pdf}")
     for pdf_path in created_pdfs:
         print(f"PDF: {pdf_path}")
     print(f"Summary: {summary_path}")
