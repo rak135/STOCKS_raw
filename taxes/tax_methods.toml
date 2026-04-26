@@ -1,0 +1,139 @@
+current_year = 2026
+
+[ADBE]
+2025 = "FIFO"
+
+[AMD]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[AMZN]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[AVTBF]
+2023 = "FIFO"
+2024 = "FIFO"
+
+[CAKE]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[CCL]
+2020 = "FIFO"
+2021 = "FIFO"
+
+[CELH]
+2025 = "FIFO"
+
+[CRM]
+2025 = "FIFO"
+
+[CRSR]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+
+[DBX]
+2020 = "FIFO"
+2023 = "FIFO"
+
+[EL]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[ELF]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[FL]
+2020 = "FIFO"
+2021 = "FIFO"
+2023 = "FIFO"
+
+[FUBO]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[HNST]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[KO]
+2020 = "FIFO"
+2021 = "FIFO"
+
+[META]
+2025 = "FIFO"
+
+[MSTR]
+2025 = "FIFO"
+
+[NKE]
+2024 = "FIFO"
+2025 = "min_gains"
+
+[NVDA]
+2024 = "FIFO"
+
+[PLNH]
+2021 = "FIFO"
+2024 = "FIFO"
+
+[PLTR]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "max_gains"
+2025 = "min_gains"
+
+[PYPL]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[QCOM]
+2020 = "FIFO"
+
+[SHOP]
+2020 = "FIFO"
+2021 = "FIFO"
+2024 = "FIFO"
+
+[SOFI]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[SWKS]
+2020 = "FIFO"
+2023 = "FIFO"
+
+[TGT]
+2023 = "FIFO"
+2024 = "FIFO"
+
+[TPR]
+2020 = "FIFO"
+
+[TSLA]
+2020 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[UBER]
+2020 = "FIFO"
+
+[WBA]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+
+[WYNN]
+2020 = "FIFO"
+2023 = "FIFO"
+2025 = "min_gains"
