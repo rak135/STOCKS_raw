@@ -17,10 +17,22 @@ def test_main_generates_all_expected_export_artifacts(tax_module, tmp_path, csv_
             {"Symbol": "PLTR", "Trade Date": "20210510", "Purchase Price": "18.76", "Quantity": "10", "Transaction Type": "BUY"},
             {"Symbol": "PLTR", "Trade Date": "20231129", "Purchase Price": "20.01", "Quantity": "10", "Transaction Type": "BUY"},
             {"Symbol": "PLTR", "Trade Date": "20250929", "Purchase Price": "180.00", "Quantity": "10", "Transaction Type": "SELL"},
+            {"Symbol": "PLTR", "Trade Date": "20260115", "Purchase Price": "190.00", "Quantity": "1", "Transaction Type": "SELL"},
         ],
     )
     tax_methods_file.write_text(
-        'current_year = 2026\n\n[PLTR]\n2021 = "FIFO"\n2023 = "FIFO"\n2025 = "TIME_TEST_MAX"\n',
+        'current_year = 2026\n'
+        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_annual_rates]\n'
+        '2021 = 21\n'
+        '2023 = 22\n'
+        '2025 = 24\n'
+        '\n'
+        '[PLTR]\n'
+        '2021 = "FIFO"\n'
+        '2023 = "FIFO"\n'
+        '2025 = "TIME_TEST_MAX"\n',
         encoding="utf-8",
     )
 
@@ -78,4 +90,6 @@ def test_write_template_creates_tax_methods_stub(tax_module, tmp_path, csv_write
     assert result == 0
     text = tax_methods_file.read_text(encoding="utf-8")
     assert "current_year = 2025" in text
+    assert 'fx_mode = "annual"' in text
+    assert "[fx_annual_rates]" in text
     assert "[NKE]" in text

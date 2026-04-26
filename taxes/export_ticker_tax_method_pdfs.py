@@ -5,8 +5,9 @@ import csv
 import re
 import sys
 import tomllib
+from bisect import bisect_right
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
@@ -18,6 +19,7 @@ DEFAULT_OUTPUT_DIR = Path(r"C:\DATA\PROJECTS\STOCKS_raw\taxes\.pdf exports tax m
 DEFAULT_TAX_METHODS_FILE = Path(r"C:\DATA\PROJECTS\STOCKS_raw\taxes\tax_methods.toml")
 
 ALLOWED_METHODS = {"fifo", "lifo", "max_gains", "min_gains", "time_test_max"}
+ALLOWED_FX_MODES = {"annual", "daily"}
 QUANTITY_TOLERANCE = Decimal("0.00001")
 METHOD_LABELS = {
     "fifo": "FIFO",
@@ -128,9 +130,13 @@ class BuyUsage:
 @dataclass
 class YearSummary:
     total_income: Decimal
+    total_income_czk: Optional[Decimal]
     total_pl: Optional[Decimal]
+    total_pl_czk: Optional[Decimal]
     taxable_pl: Optional[Decimal]
+    taxable_pl_czk: Optional[Decimal]
     over_three_year_pl: Optional[Decimal]
+    over_three_year_pl_czk: Optional[Decimal]
 
 
 @dataclass
@@ -156,9 +162,26 @@ class TickerAnalysis:
 
 
 @dataclass
+class FxConfig:
+    mode: str = "annual"
+    daily_file: Optional[Path] = None
+    annual_rates: Dict[int, Decimal] = field(default_factory=dict)
+
+
+@dataclass
+class FxRateBook:
+    mode: str
+    daily_file: Optional[Path]
+    annual_rates: Dict[int, Decimal]
+    daily_rates_by_date: Dict[date, Decimal] = field(default_factory=dict)
+    daily_dates: List[date] = field(default_factory=list)
+
+
+@dataclass
 class TaxConfig:
     current_year: int
     methods_by_ticker: Dict[str, Dict[int, str]]
+    fx_config: FxConfig = field(default_factory=FxConfig)
 
 
 def discover_csv_files(input_dir: Path) -> List[Path]:
@@ -446,13 +469,28 @@ def _safe_pdf_name(ticker: str) -> str:
     return safe or "UNKNOWN"
 
 
-def _fmt_decimal(value: Optional[Decimal]) -> str:
+def _fmt_decimal(value: Optional[Decimal], places: int = 2) -> str:
     if value is None:
         return ""
-    text = format(value.normalize(), "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text
+    quantizer = Decimal("1").scaleb(-places)
+    rounded = value.quantize(quantizer, rounding=ROUND_HALF_UP)
+    return format(rounded, f".{places}f")
+
+
+def _fmt_usd_czk_pair(usd_value: Optional[Decimal], czk_value: Optional[Decimal]) -> str:
+    if usd_value is None and czk_value is None:
+        return ""
+    if czk_value is None:
+        return _fmt_decimal(usd_value)
+    if usd_value is None:
+        return _fmt_decimal(czk_value)
+    return f"{_fmt_decimal(usd_value)} / {_fmt_decimal(czk_value)}"
+
+
+def _year_fx_label(year: int, current_year: int, fx_rate_book: FxRateBook) -> str:
+    if year >= current_year:
+        return "FX=n/a"
+    return f"FX={fx_rate_book.mode}"
 
 
 def _is_within_quantity_tolerance(value: Decimal) -> bool:
@@ -463,6 +501,26 @@ def _compute_trade_value(quantity: Decimal, price: Optional[Decimal]) -> Optiona
     if price is None:
         return None
     return quantity * price
+
+
+def _compute_trade_value_czk(
+    quantity: Decimal,
+    price: Optional[Decimal],
+    value_date: date,
+    fx_rate_book: FxRateBook,
+) -> Optional[Decimal]:
+    trade_value = _compute_trade_value(quantity, price)
+    if trade_value is None:
+        return None
+    return trade_value * resolve_usd_to_czk_rate(fx_rate_book, value_date)
+
+
+def _compute_match_pl_czk(match: MatchDetail, sell_date: date, fx_rate_book: FxRateBook) -> Decimal:
+    buy_value_czk = _compute_trade_value_czk(match.matched_qty, match.buy_price, match.buy_date, fx_rate_book)
+    sell_value_czk = _compute_trade_value_czk(match.matched_qty, match.sell_price, sell_date, fx_rate_book)
+    assert buy_value_czk is not None
+    assert sell_value_czk is not None
+    return sell_value_czk - buy_value_czk
 
 
 def _source_ref(source_file: str, row_number: int) -> str:
@@ -502,6 +560,53 @@ def _parse_current_year(raw_value: object) -> int:
     raise ValueError("tax_methods.toml: 'current_year' must be an integer")
 
 
+def _parse_fx_mode(raw_value: object) -> str:
+    if raw_value is None:
+        return "annual"
+    if not isinstance(raw_value, str):
+        raise ValueError("tax_methods.toml: 'fx_mode' must be 'daily' or 'annual'")
+    normalized = raw_value.strip().lower()
+    if normalized not in ALLOWED_FX_MODES:
+        raise ValueError("tax_methods.toml: 'fx_mode' must be 'daily' or 'annual'")
+    return normalized
+
+
+def _parse_decimal_config_value(raw_value: object, field_name: str) -> Decimal:
+    if isinstance(raw_value, Decimal):
+        return raw_value
+    if isinstance(raw_value, (int, float, str)):
+        parsed = parse_decimal(str(raw_value))
+        if parsed is not None:
+            return parsed
+    raise ValueError(f"tax_methods.toml: '{field_name}' must be a decimal number")
+
+
+def _parse_fx_daily_file(raw_value: object) -> Optional[Path]:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str):
+        raise ValueError("tax_methods.toml: 'fx_daily_file' must be a string path")
+    text = raw_value.strip()
+    if not text:
+        return None
+    return Path(text)
+
+
+def _parse_fx_annual_rates(raw_value: object) -> Dict[int, Decimal]:
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        raise ValueError("tax_methods.toml: 'fx_annual_rates' must be a table")
+
+    annual_rates: Dict[int, Decimal] = {}
+    for year_key, rate_value in raw_value.items():
+        year_text = str(year_key).strip()
+        if not year_text.isdigit():
+            raise ValueError(f"tax_methods.toml: fx_annual_rates has invalid year key '{year_key}'")
+        annual_rates[int(year_text)] = _parse_decimal_config_value(rate_value, f"fx_annual_rates.{year_text}")
+    return annual_rates
+
+
 def load_tax_config(tax_methods_file: Path) -> TaxConfig:
     if not tax_methods_file.exists():
         raise FileNotFoundError(f"Tax methods file does not exist: {tax_methods_file}")
@@ -515,10 +620,15 @@ def load_tax_config(tax_methods_file: Path) -> TaxConfig:
         raise ValueError("tax_methods.toml: missing top-level 'current_year'")
 
     current_year = _parse_current_year(data["current_year"])
+    fx_config = FxConfig(
+        mode=_parse_fx_mode(data.get("fx_mode")),
+        daily_file=_parse_fx_daily_file(data.get("fx_daily_file")),
+        annual_rates=_parse_fx_annual_rates(data.get("fx_annual_rates")),
+    )
     methods_by_ticker: Dict[str, Dict[int, str]] = {}
 
     for key, value in data.items():
-        if key == "current_year":
+        if key in {"current_year", "fx_mode", "fx_daily_file", "fx_annual_rates"}:
             continue
 
         if not isinstance(value, dict):
@@ -541,7 +651,111 @@ def load_tax_config(tax_methods_file: Path) -> TaxConfig:
 
         methods_by_ticker[ticker] = ticker_methods
 
-    return TaxConfig(current_year=current_year, methods_by_ticker=methods_by_ticker)
+    return TaxConfig(current_year=current_year, methods_by_ticker=methods_by_ticker, fx_config=fx_config)
+
+
+def _load_cnb_daily_usd_rates(fx_daily_file: Path) -> Dict[date, Decimal]:
+    try:
+        raw_text = fx_daily_file.read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        raise ValueError(f"FX daily file could not be read: {fx_daily_file} ({exc})") from exc
+
+    rows = [row for row in csv.reader(raw_text.splitlines(), delimiter="|") if row]
+    if not rows:
+        raise ValueError(f"FX daily file is empty: {fx_daily_file}")
+
+    if len(rows) >= 2:
+        first_cell = rows[0][0].strip().upper() if rows[0] else ""
+        second_header = [cell.strip().upper() for cell in rows[1]]
+        if first_cell.startswith("M") and second_header[:2] == ["DATUM", "KURZ"]:
+            rates: Dict[date, Decimal] = {}
+            for row_number, row in enumerate(rows[2:], start=3):
+                if len(row) < 2:
+                    continue
+                rate_date = parse_date(row[0])
+                if rate_date is None:
+                    raise ValueError(f"FX daily file has invalid date on line {row_number}: {fx_daily_file}")
+                rate = parse_decimal(row[1])
+                if rate is None:
+                    raise ValueError(f"FX daily file has invalid USD rate on line {row_number}: {fx_daily_file}")
+                rates[rate_date] = rate
+
+            if not rates:
+                raise ValueError(f"FX daily file has no USD rates: {fx_daily_file}")
+            return rates
+
+    header = rows[0]
+    usd_index = None
+    for index, column_name in enumerate(header):
+        normalized = re.sub(r"\s+", "", column_name.strip().upper())
+        if normalized == "1USD":
+            usd_index = index
+            break
+    if usd_index is None:
+        raise ValueError(f"FX daily file is missing '1 USD' column: {fx_daily_file}")
+
+    rates: Dict[date, Decimal] = {}
+    for row_number, row in enumerate(rows[1:], start=2):
+        if len(row) <= usd_index:
+            continue
+        rate_date = parse_date(row[0])
+        if rate_date is None:
+            raise ValueError(f"FX daily file has invalid date on line {row_number}: {fx_daily_file}")
+        rate = parse_decimal(row[usd_index])
+        if rate is None:
+            raise ValueError(f"FX daily file has invalid USD rate on line {row_number}: {fx_daily_file}")
+        rates[rate_date] = rate
+
+    if not rates:
+        raise ValueError(f"FX daily file has no USD rates: {fx_daily_file}")
+    return rates
+
+
+def _load_all_cnb_daily_usd_rates(fx_daily_file: Path) -> Dict[date, Decimal]:
+    sibling_files = sorted(
+        path for path in fx_daily_file.parent.glob("cnb_*.txt") if path.is_file()
+    )
+    if fx_daily_file not in sibling_files:
+        sibling_files.append(fx_daily_file)
+        sibling_files.sort()
+
+    rates: Dict[date, Decimal] = {}
+    for file_path in sibling_files:
+        rates.update(_load_cnb_daily_usd_rates(file_path))
+
+    if not rates:
+        raise ValueError(f"FX daily files have no USD rates in: {fx_daily_file.parent}")
+    return rates
+
+
+def load_fx_rate_book(fx_config: FxConfig) -> FxRateBook:
+    book = FxRateBook(mode=fx_config.mode, daily_file=fx_config.daily_file, annual_rates=dict(fx_config.annual_rates))
+    if fx_config.mode != "daily":
+        return book
+
+    if fx_config.daily_file is None:
+        raise ValueError("tax_methods.toml: 'fx_daily_file' is required when fx_mode = 'daily'")
+    if not fx_config.daily_file.exists():
+        raise FileNotFoundError(f"FX daily file does not exist: {fx_config.daily_file}")
+
+    book.daily_rates_by_date = _load_all_cnb_daily_usd_rates(fx_config.daily_file)
+    book.daily_dates = sorted(book.daily_rates_by_date)
+    return book
+
+
+def resolve_usd_to_czk_rate(fx_rate_book: FxRateBook, value_date: date) -> Decimal:
+    annual_rate = fx_rate_book.annual_rates.get(value_date.year)
+    if fx_rate_book.mode == "annual":
+        if annual_rate is None:
+            raise ValueError(f"Missing annual FX rate for year {value_date.year}")
+        return annual_rate
+
+    matched_index = bisect_right(fx_rate_book.daily_dates, value_date) - 1
+    if matched_index >= 0:
+        matched_date = fx_rate_book.daily_dates[matched_index]
+        return fx_rate_book.daily_rates_by_date[matched_date]
+
+    raise ValueError(f"Missing daily FX rate for {value_date.isoformat()} in {fx_rate_book.daily_file}")
 
 
 def _infer_template_current_year(transactions: Iterable[Transaction]) -> int:
@@ -554,7 +768,16 @@ def _infer_template_current_year(transactions: Iterable[Transaction]) -> int:
 def build_template_text(grouped: Dict[str, List[Transaction]], current_year: int) -> str:
     lines: List[str] = []
     lines.append("current_year = %s" % current_year)
+    lines.append('fx_mode = "annual"')
+    lines.append('fx_daily_file = ""')
     lines.append("")
+
+    all_years = sorted({tx.date.year for transactions in grouped.values() for tx in transactions})
+    if all_years:
+        lines.append("[fx_annual_rates]")
+        for year in all_years:
+            lines.append(f'{year} = ""')
+        lines.append("")
 
     for ticker, transactions in grouped.items():
         years = sorted({tx.date.year for tx in transactions if tx.date.year < current_year})
@@ -1074,7 +1297,7 @@ def analyze_ticker(ticker: str, transactions: List[Transaction], config: TaxConf
 
 
 OPEN_POSITIONS_COL_WIDTHS = [120, 80]
-YEAR_HISTORY_COL_WIDTHS = [122, 42, 52, 56, 60, 104, 112]
+YEAR_HISTORY_COL_WIDTHS = [102, 38, 46, 40, 86, 70, 82, 84]
 
 
 def _format_holding_period(days: int) -> str:
@@ -1085,30 +1308,61 @@ def _format_match_status(time_test_passed: bool, holding_period_days: int) -> st
     return f"{'PASS' if time_test_passed else 'FAIL'} | {_format_holding_period(holding_period_days)}"
 
 
-def _compute_year_summary(analysis: TickerAnalysis, year: int, current_year: int) -> YearSummary:
+def _compute_year_summary(
+    analysis: TickerAnalysis,
+    year: int,
+    current_year: int,
+    fx_rate_book: FxRateBook,
+) -> YearSummary:
     year_sells = [tx for tx in analysis.transactions if tx.date.year == year and tx.action == "SELL"]
     total_income = sum(((_compute_trade_value(tx.quantity, tx.price) or Decimal("0")) for tx in year_sells), Decimal("0"))
 
     if year >= current_year:
         return YearSummary(
             total_income=total_income,
+            total_income_czk=None,
             total_pl=None,
+            total_pl_czk=None,
             taxable_pl=None,
+            taxable_pl_czk=None,
             over_three_year_pl=None,
+            over_three_year_pl_czk=None,
         )
+
+    total_income_czk = sum(
+        ((_compute_trade_value_czk(tx.quantity, tx.price, tx.date, fx_rate_book) or Decimal("0")) for tx in year_sells),
+        Decimal("0"),
+    )
 
     sell_matches = analysis.sell_matches_by_year.get(year, [])
     total_pl = sum((sell_match.total_pl for sell_match in sell_matches), Decimal("0"))
     taxable_pl = sum((sell_match.total_taxable_pl for sell_match in sell_matches), Decimal("0"))
+    total_pl_czk = sum(
+        (_compute_match_pl_czk(match, sell_match.sell_date, fx_rate_book) for sell_match in sell_matches for match in sell_match.matches),
+        Decimal("0"),
+    )
     over_three_year_pl = sum(
         (match.total_pl for sell_match in sell_matches for match in sell_match.matches if match.time_test_passed),
         Decimal("0"),
     )
+    over_three_year_pl_czk = sum(
+        (
+            _compute_match_pl_czk(match, sell_match.sell_date, fx_rate_book)
+            for sell_match in sell_matches
+            for match in sell_match.matches
+            if match.time_test_passed
+        ),
+        Decimal("0"),
+    )
     return YearSummary(
         total_income=total_income,
+        total_income_czk=total_income_czk,
         total_pl=total_pl,
+        total_pl_czk=total_pl_czk,
         taxable_pl=taxable_pl,
+        taxable_pl_czk=total_pl_czk - over_three_year_pl_czk,
         over_three_year_pl=over_three_year_pl,
+        over_three_year_pl_czk=over_three_year_pl_czk,
     )
 
 
@@ -1117,19 +1371,19 @@ def _build_year_summary_table(summary: YearSummary):
     from reportlab.platypus import Table, TableStyle
 
     rows = [[
-        "Income",
-        "Profit/Loss",
-        "3 years rule PASS (P/L)",
-        "3 years rule FAIL (P/L)",
+        "Income USD/CZK",
+        "Profit/Loss USD/CZK",
+        "3 years rule PASS USD/CZK",
+        "3 years rule FAIL USD/CZK",
     ]]
     rows.append([
-        _fmt_decimal(summary.total_income),
-        _fmt_decimal(summary.total_pl),
-        _fmt_decimal(summary.over_three_year_pl),
-        _fmt_decimal(summary.taxable_pl),
+        _fmt_usd_czk_pair(summary.total_income, summary.total_income_czk),
+        _fmt_usd_czk_pair(summary.total_pl, summary.total_pl_czk),
+        _fmt_usd_czk_pair(summary.over_three_year_pl, summary.over_three_year_pl_czk),
+        _fmt_usd_czk_pair(summary.taxable_pl, summary.taxable_pl_czk),
     ])
 
-    table = Table(rows, repeatRows=1, colWidths=[115, 115, 115, 115], hAlign="LEFT")
+    table = Table(rows, repeatRows=1, colWidths=[125, 125, 125, 125], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [
@@ -1157,17 +1411,26 @@ def _sum_optional_decimals(values: List[Optional[Decimal]]) -> Optional[Decimal]
 def _compute_aggregate_year_summaries(
     analyses: List[TickerAnalysis],
     current_year: int,
+    fx_rate_book: FxRateBook,
 ) -> Dict[int, YearSummary]:
     years = sorted({year for analysis in analyses for year in analysis.years}, reverse=True)
     aggregated: Dict[int, YearSummary] = {}
 
     for year in years:
-        summaries = [_compute_year_summary(analysis, year, current_year) for analysis in analyses if year in analysis.years]
+        summaries = [
+            _compute_year_summary(analysis, year, current_year, fx_rate_book)
+            for analysis in analyses
+            if year in analysis.years
+        ]
         aggregated[year] = YearSummary(
             total_income=sum((summary.total_income for summary in summaries), Decimal("0")),
+            total_income_czk=_sum_optional_decimals([summary.total_income_czk for summary in summaries]),
             total_pl=_sum_optional_decimals([summary.total_pl for summary in summaries]),
+            total_pl_czk=_sum_optional_decimals([summary.total_pl_czk for summary in summaries]),
             taxable_pl=_sum_optional_decimals([summary.taxable_pl for summary in summaries]),
+            taxable_pl_czk=_sum_optional_decimals([summary.taxable_pl_czk for summary in summaries]),
             over_three_year_pl=_sum_optional_decimals([summary.over_three_year_pl for summary in summaries]),
+            over_three_year_pl_czk=_sum_optional_decimals([summary.over_three_year_pl_czk for summary in summaries]),
         )
 
     return aggregated
@@ -1178,6 +1441,7 @@ def build_all_tickers_year_summary_pdf(
     output_dir: Path,
     generated_at: datetime,
     current_year: int,
+    fx_rate_book: FxRateBook,
 ) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -1207,26 +1471,28 @@ def build_all_tickers_year_summary_pdf(
         textColor=colors.black,
     )
 
-    aggregated = _compute_aggregate_year_summaries(analyses, current_year)
+    aggregated = _compute_aggregate_year_summaries(analyses, current_year, fx_rate_book)
     rows = [[
         "Year",
-        "Income",
-        "Profit/Loss",
-        "3 years rule PASS (P/L)",
-        "3 years rule FAIL (P/L)",
+        "FX",
+        "Income USD/CZK",
+        "Profit/Loss USD/CZK",
+        "3 years rule PASS USD/CZK",
+        "3 years rule FAIL USD/CZK",
     ]]
 
     for year in sorted(aggregated, reverse=True):
         summary = aggregated[year]
         rows.append([
             str(year),
-            _fmt_decimal(summary.total_income),
-            _fmt_decimal(summary.total_pl),
-            _fmt_decimal(summary.over_three_year_pl),
-            _fmt_decimal(summary.taxable_pl),
+            _year_fx_label(year, current_year, fx_rate_book),
+            _fmt_usd_czk_pair(summary.total_income, summary.total_income_czk),
+            _fmt_usd_czk_pair(summary.total_pl, summary.total_pl_czk),
+            _fmt_usd_czk_pair(summary.over_three_year_pl, summary.over_three_year_pl_czk),
+            _fmt_usd_czk_pair(summary.taxable_pl, summary.taxable_pl_czk),
         ])
 
-    table = Table(rows, repeatRows=1, colWidths=[54, 95, 95, 120, 120], hAlign="LEFT")
+    table = Table(rows, repeatRows=1, colWidths=[46, 48, 102, 102, 112, 112], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [
@@ -1244,7 +1510,7 @@ def build_all_tickers_year_summary_pdf(
 
     story = [
         Paragraph(
-            f"All Tickers Year Summary | Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"All Tickers Year Summary | FX mode: {fx_rate_book.mode} | Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}",
             title_style,
         ),
         Spacer(1, 8),
@@ -1269,6 +1535,7 @@ def _build_year_history_table(
     analysis: TickerAnalysis,
     year: int,
     current_year: int,
+    fx_rate_book: FxRateBook,
     styles,
 ):
     from reportlab.lib import colors
@@ -1292,7 +1559,8 @@ def _build_year_history_table(
         Paragraph("Date / Block", header_style),
         "Qty",
         Paragraph("Unit Price", header_style),
-        Paragraph("Value", header_style),
+        Paragraph("FX", header_style),
+        Paragraph("Value USD/CZK", header_style),
         Paragraph("Taxable P/L", header_style),
         Paragraph("Match Detail", header_style),
         Paragraph("Source / Row", header_style),
@@ -1306,6 +1574,13 @@ def _build_year_history_table(
         note_prefix = "* " if is_used_buy else ""
         block_label = f"{note_prefix}{tx.date.isoformat()} {tx.action}"
         block_style = sell_block_style if tx.action == "SELL" else buy_block_style
+        tx_value_usd = _compute_trade_value(tx.quantity, tx.price)
+        tx_fx_rate = None
+        tx_value_czk = None
+
+        if year < current_year and tx.price is not None:
+            tx_fx_rate = resolve_usd_to_czk_rate(fx_rate_book, tx.date)
+            tx_value_czk = _compute_trade_value_czk(tx.quantity, tx.price, tx.date, fx_rate_book)
 
         if year == current_year and tx.action == "SELL":
             block_label = f"{tx.date.isoformat()} SELL (ignored)"
@@ -1315,7 +1590,8 @@ def _build_year_history_table(
             Paragraph(block_label, block_style),
             _fmt_decimal(tx.quantity),
             _fmt_decimal(tx.price),
-            _fmt_decimal(_compute_trade_value(tx.quantity, tx.price)),
+            _fmt_decimal(tx_fx_rate),
+            _fmt_usd_czk_pair(tx_value_usd, tx_value_czk),
             _fmt_decimal(taxable_pl),
             "",
             Paragraph(_source_ref(tx.source_file, tx.original_row_number), body_style),
@@ -1325,11 +1601,16 @@ def _build_year_history_table(
 
         if sell_match is not None:
             for lot_number, match in enumerate(sell_match.matches, start=1):
+                match_fx_rate = resolve_usd_to_czk_rate(fx_rate_book, match.buy_date)
                 rows.append([
                     Paragraph(f"* Lot #{lot_number} | Bought {match.buy_date.isoformat()}", lot_style),
                     _fmt_decimal(match.matched_qty),
                     _fmt_decimal(match.buy_price),
-                    _fmt_decimal(_compute_trade_value(match.matched_qty, match.buy_price)),
+                    _fmt_decimal(match_fx_rate),
+                    _fmt_usd_czk_pair(
+                        _compute_trade_value(match.matched_qty, match.buy_price),
+                        _compute_trade_value_czk(match.matched_qty, match.buy_price, match.buy_date, fx_rate_book),
+                    ),
                     _fmt_decimal(match.total_pl),
                     Paragraph(_format_match_status(match.time_test_passed, match.holding_period_days), lot_style),
                     Paragraph(_source_ref(match.buy_source_file, match.buy_row_number), lot_style),
@@ -1337,11 +1618,16 @@ def _build_year_history_table(
                 detail_row_indexes.append(len(rows) - 1)
         elif buy_usages:
             for usage_number, usage in enumerate(buy_usages, start=1):
+                usage_fx_rate = resolve_usd_to_czk_rate(fx_rate_book, usage.sell_date)
                 rows.append([
                     Paragraph(f"* Split #{usage_number} | Sold {usage.sell_date.isoformat()}", lot_style),
                     _fmt_decimal(usage.matched_qty),
                     _fmt_decimal(usage.sell_price),
-                    _fmt_decimal(_compute_trade_value(usage.matched_qty, usage.sell_price)),
+                    _fmt_decimal(usage_fx_rate),
+                    _fmt_usd_czk_pair(
+                        _compute_trade_value(usage.matched_qty, usage.sell_price),
+                        _compute_trade_value_czk(usage.matched_qty, usage.sell_price, usage.sell_date, fx_rate_book),
+                    ),
                     _fmt_decimal(usage.total_pl),
                     Paragraph(_format_match_status(usage.time_test_passed, usage.holding_period_days), lot_style),
                     Paragraph(_source_ref(usage.sell_source_file, usage.sell_row_number), lot_style),
@@ -1351,7 +1637,11 @@ def _build_year_history_table(
             rows.append([
                 Paragraph("* Current year | No tax matching", lot_style),
                 "",
+                "",
+                "",
                 Paragraph("Not included", lot_style),
+                Paragraph("Not included", lot_style),
+                "",
                 "",
             ])
             detail_row_indexes.append(len(rows) - 1)
@@ -1397,6 +1687,7 @@ def build_pdf_for_ticker(
     output_dir: Path,
     generated_at: datetime,
     current_year: int,
+    fx_rate_book: FxRateBook,
 ) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -1521,8 +1812,10 @@ def build_pdf_for_ticker(
 
         heading = f"Year: {year}"
         if year < current_year:
-            heading = f"{heading} | Method: {METHOD_LABELS[analysis.year_methods[year]]}"
-        year_summary_table = _build_year_summary_table(_compute_year_summary(analysis, year, current_year))
+            heading = f"{heading} | Method: {METHOD_LABELS[analysis.year_methods[year]]} | {_year_fx_label(year, current_year, fx_rate_book)}"
+        else:
+            heading = f"{heading} | {_year_fx_label(year, current_year, fx_rate_book)}"
+        year_summary_table = _build_year_summary_table(_compute_year_summary(analysis, year, current_year, fx_rate_book))
         story.append(CondPageBreak(170))
         story.append(
             KeepTogether(
@@ -1535,7 +1828,7 @@ def build_pdf_for_ticker(
         )
         story.append(Spacer(1, 6))
 
-        story.append(_build_year_history_table(analysis, year, current_year, exported_styles))
+        story.append(_build_year_history_table(analysis, year, current_year, fx_rate_book, exported_styles))
         story.append(Spacer(1, 8))
 
         if year == current_year and analysis.ignored_current_year_sells:
@@ -1551,7 +1844,7 @@ def build_pdf_for_ticker(
     return output_path
 
 
-def write_summary(output_dir: Path, analyses: List[TickerAnalysis]) -> Path:
+def write_summary(output_dir: Path, analyses: List[TickerAnalysis], fx_rate_book: FxRateBook) -> Path:
     summary_path = output_dir / "_export_summary.csv"
     with summary_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -1559,6 +1852,7 @@ def write_summary(output_dir: Path, analyses: List[TickerAnalysis]) -> Path:
             [
                 "ticker",
                 "pdf_file",
+                "fx_mode",
                 "year_count",
                 "sell_count",
                 "ignored_current_year_sell_count",
@@ -1573,6 +1867,7 @@ def write_summary(output_dir: Path, analyses: List[TickerAnalysis]) -> Path:
                 [
                     analysis.ticker,
                     f"{_safe_pdf_name(analysis.ticker)}.pdf",
+                    fx_rate_book.mode,
                     len(analysis.years),
                     sell_count,
                     len(analysis.ignored_current_year_sells),
@@ -1672,6 +1967,12 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    try:
+        fx_rate_book = load_fx_rate_book(config.fx_config)
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
     validation_errors = validate_tax_config(grouped, config)
     if validation_errors:
         print("Tax methods validation failed:", file=sys.stderr)
@@ -1693,10 +1994,16 @@ def main() -> int:
     generated_at = datetime.now()
     created_pdfs: List[Path] = []
     for analysis in analyses:
-        created_pdfs.append(build_pdf_for_ticker(analysis, args.output_dir, generated_at, config.current_year))
-    all_tickers_summary_pdf = build_all_tickers_year_summary_pdf(analyses, args.output_dir, generated_at, config.current_year)
+        created_pdfs.append(build_pdf_for_ticker(analysis, args.output_dir, generated_at, config.current_year, fx_rate_book))
+    all_tickers_summary_pdf = build_all_tickers_year_summary_pdf(
+        analyses,
+        args.output_dir,
+        generated_at,
+        config.current_year,
+        fx_rate_book,
+    )
 
-    summary_path = write_summary(args.output_dir, analyses)
+    summary_path = write_summary(args.output_dir, analyses, fx_rate_book)
     warnings_path = write_warnings(args.output_dir, all_warnings, all_mapping_notes, analyses)
 
     ignored_current_year_sell_count = sum(len(item.ignored_current_year_sells) for item in analyses)

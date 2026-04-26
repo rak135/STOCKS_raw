@@ -69,9 +69,17 @@ def test_aggregate_year_summary_sums_all_tickers(tax_module, tx_factory):
         tax_module.TaxConfig(current_year=2026, methods_by_ticker={"BBB": {2024: "fifo", 2025: "fifo"}}),
     )
 
-    summaries = tax_module._compute_aggregate_year_summaries([alpha, beta], 2026)
+    fx_rate_book = tax_module.load_fx_rate_book(
+        tax_module.FxConfig(mode="annual", annual_rates={2021: Decimal("20"), 2024: Decimal("22"), 2025: Decimal("25")})
+    )
+
+    summaries = tax_module._compute_aggregate_year_summaries([alpha, beta], 2026, fx_rate_book)
 
     assert summaries[2025].total_income == Decimal("70")
+    assert summaries[2025].total_income_czk == Decimal("1750")
     assert summaries[2025].total_pl == Decimal("30")
+    assert summaries[2025].total_pl_czk == Decimal("890")
     assert summaries[2025].taxable_pl == Decimal("-10")
+    assert summaries[2025].taxable_pl_czk == Decimal("-160")
     assert summaries[2025].over_three_year_pl == Decimal("40")
+    assert summaries[2025].over_three_year_pl_czk == Decimal("1050")

@@ -1,27 +1,27 @@
 Export warnings and diagnostics
-Generated: 2026-04-26 17:19:21
+Generated: 2026-04-26 18:43:21
 
 Inferred column mappings and dialect
-lynx_portfolio_new.csv: detected delimiter=','
-lynx_portfolio_new.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
-revolut_portfolio_new.csv: detected delimiter=','
-revolut_portfolio_new.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
-trading212_portfolio_new.csv: detected delimiter=','
-trading212_portfolio_new.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
-xtbczk_portfolio_new.csv: detected delimiter=','
-xtbczk_portfolio_new.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
-xtbusd_portfolio_new.csv: detected delimiter=','
-xtbusd_portfolio_new.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
+lynx_portfolio.csv: detected delimiter=','
+lynx_portfolio.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
+revolut_portfolio.csv: detected delimiter=','
+revolut_portfolio.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
+trading212_portfolio.csv: detected delimiter=','
+trading212_portfolio.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
+xtbczk_portfolio.csv: detected delimiter=','
+xtbczk_portfolio.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
+xtbusd_portfolio.csv: detected delimiter=','
+xtbusd_portfolio.csv: column mapping ticker=Symbol, action=Transaction Type, date=Trade Date, quantity=Quantity, price=Purchase Price, currency=None, fee=Commission, gross_amount=None
 
 Warnings
-revolut_portfolio_new.csv:115: skipped row because no transaction type
-trading212_portfolio_new.csv:31: skipped row because no transaction type
-trading212_portfolio_new.csv:35: skipped row because no transaction type
-trading212_portfolio_new.csv:36: skipped row because no transaction type
-trading212_portfolio_new.csv:37: skipped row because no transaction type
-trading212_portfolio_new.csv:60: skipped row because no transaction type
-trading212_portfolio_new.csv:61: skipped row because no transaction type
-trading212_portfolio_new.csv:81: skipped row because no transaction type
+revolut_portfolio.csv:115: skipped row because no transaction type
+trading212_portfolio.csv:31: skipped row because no transaction type
+trading212_portfolio.csv:35: skipped row because no transaction type
+trading212_portfolio.csv:36: skipped row because no transaction type
+trading212_portfolio.csv:37: skipped row because no transaction type
+trading212_portfolio.csv:60: skipped row because no transaction type
+trading212_portfolio.csv:61: skipped row because no transaction type
+trading212_portfolio.csv:81: skipped row because no transaction type
 
 Ignored current-year SELL transactions
 None
