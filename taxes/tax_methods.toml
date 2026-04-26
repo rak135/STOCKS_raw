@@ -72,11 +72,11 @@ current_year = 2026
 2025 = "FIFO"
 
 [MSTR]
-2025 = "TIME_TEST_MAX"
+2025 = "FIFO"
 
 [NKE]
 2024 = "FIFO"
-2025 = "TIME_TEST_MAX"
+2025 = "min_gains"
 
 [NVDA]
 2024 = "FIFO"
@@ -89,7 +89,7 @@ current_year = 2026
 2021 = "FIFO"
 2023 = "FIFO"
 2024 = "max_gains"
-2025 = "TIME_TEST_MAX"
+2025 = "min_gains"
 
 [PYPL]
 2023 = "FIFO"
@@ -120,10 +120,10 @@ current_year = 2026
 2020 = "FIFO"
 
 [TSLA]
-2020 = "TIME_TEST_MAX"
+2020 = "FIFO"
 2023 = "FIFO"
 2024 = "FIFO"
-2025 = "TIME_TEST_MAX"
+2025 = "FIFO"
 
 [UBER]
 2020 = "FIFO"
@@ -136,4 +136,4 @@ current_year = 2026
 [WYNN]
 2020 = "FIFO"
 2023 = "FIFO"
-2025 = "TIME_TEST_MAX"
+2025 = "min_gains"

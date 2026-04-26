@@ -1,5 +1,5 @@
 Export warnings and diagnostics
-Generated: 2026-04-26 14:25:35
+Generated: 2026-04-26 17:19:21
 
 Inferred column mappings and dialect
 lynx_portfolio_new.csv: detected delimiter=','
