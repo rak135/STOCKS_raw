@@ -46,6 +46,18 @@ class FileExtractionResult:
     mapping_notes: List[str]
 
 
+@dataclass
+class OpenPositionLot:
+    source_file: str
+    ticker: str
+    buy_date: date
+    quantity: Decimal
+    price: Optional[Decimal]
+    currency: Optional[str]
+    fee: Optional[Decimal]
+    original_row_number: int
+
+
 def discover_csv_files(input_dir: Path) -> List[Path]:
     if not input_dir.exists() or not input_dir.is_dir():
         raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
@@ -353,6 +365,69 @@ def _compute_trade_value(tx: Transaction) -> Optional[Decimal]:
     return tx.quantity * tx.price
 
 
+def _compute_open_position_value(lot: OpenPositionLot) -> Optional[Decimal]:
+    if lot.price is None:
+        return None
+    return lot.quantity * lot.price
+
+
+def compute_open_position_lots(transactions: List[Transaction]) -> List[OpenPositionLot]:
+    buy_queues: Dict[str, List[OpenPositionLot]] = defaultdict(list)
+
+    for tx in transactions:
+        if tx.action == "BUY":
+            buy_queues[tx.source_file].append(
+                OpenPositionLot(
+                    source_file=tx.source_file,
+                    ticker=tx.ticker,
+                    buy_date=tx.date,
+                    quantity=tx.quantity,
+                    price=tx.price,
+                    currency=tx.currency,
+                    fee=tx.fee,
+                    original_row_number=tx.original_row_number,
+                )
+            )
+            continue
+
+        remaining_to_sell = tx.quantity
+        lots = buy_queues[tx.source_file]
+        while remaining_to_sell > 0 and lots:
+            lot = lots[0]
+            matched_qty = min(lot.quantity, remaining_to_sell)
+            lot.quantity -= matched_qty
+            remaining_to_sell -= matched_qty
+            if lot.quantity <= 0:
+                lots.pop(0)
+
+    open_lots: List[OpenPositionLot] = []
+    for lots in buy_queues.values():
+        for lot in lots:
+            if lot.quantity > 0:
+                open_lots.append(lot)
+
+    open_lots.sort(
+        key=lambda lot: (
+            lot.buy_date,
+            lot.source_file.lower(),
+            lot.original_row_number,
+        ),
+        reverse=True,
+    )
+    return open_lots
+
+
+def compute_open_position_quantity(transactions: List[Transaction]) -> Decimal:
+    total = Decimal("0")
+    for lot in compute_open_position_lots(transactions):
+        total += lot.quantity
+    return total
+
+
+YEAR_TABLE_COL_WIDTHS = [56, 36, 52, 54, 64, 38, 38, 128, 34]
+OPEN_POSITIONS_COL_WIDTHS = [120, 80]
+
+
 def build_pdf_for_ticker(
     ticker: str,
     transactions: List[Transaction],
@@ -362,7 +437,7 @@ def build_pdf_for_ticker(
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Indenter, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     output_path = output_dir / f"{_safe_pdf_name(ticker)}.pdf"
     doc = SimpleDocTemplate(
@@ -412,6 +487,45 @@ def build_pdf_for_ticker(
     ))
     story.append(Spacer(1, 8))
 
+    open_position_quantity = compute_open_position_quantity(transactions)
+    story.append(Paragraph("Open Positions", year_style))
+    story.append(Spacer(1, 4))
+    year_table_left_offset = (doc.width - sum(YEAR_TABLE_COL_WIDTHS)) / 2
+
+    open_rows = [[
+        "Ticker",
+        "Open Qty",
+    ]]
+    open_rows.append([
+        ticker,
+        _fmt_decimal(open_position_quantity),
+    ])
+
+    open_table = Table(
+        open_rows,
+        repeatRows=1,
+        colWidths=OPEN_POSITIONS_COL_WIDTHS,
+        hAlign="LEFT",
+    )
+    open_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    story.append(Indenter(left=year_table_left_offset, right=0))
+    story.append(open_table)
+    story.append(Indenter(left=-year_table_left_offset, right=0))
+    story.append(Spacer(1, 10))
+
     for idx, year in enumerate(years):
         if idx > 0:
             story.append(Spacer(1, 10))
@@ -431,9 +545,8 @@ def build_pdf_for_ticker(
             Paragraph("CSV Row", header_cell_style),
         ]]
 
-        for tx in transactions:
-            if tx.date.year != year:
-                continue
+        year_transactions = [tx for tx in transactions if tx.date.year == year]
+        for tx in reversed(year_transactions):
             rows.append([
                 tx.date.isoformat(),
                 tx.action,
@@ -449,7 +562,7 @@ def build_pdf_for_ticker(
         table = Table(
             rows,
             repeatRows=1,
-            colWidths=[56, 36, 52, 54, 64, 38, 38, 128, 34],
+            colWidths=YEAR_TABLE_COL_WIDTHS,
         )
         table.setStyle(
             TableStyle(
