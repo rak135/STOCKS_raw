@@ -1,0 +1,151 @@
+current_year = 2026
+fx_mode = "daily"
+fx_daily_file = "C:\\DATA\\PROJECTS\\STOCKS_raw\\.csv\\fx\\cnb_2025.txt"
+
+[fx_annual_rates]
+# Fill these when fx_mode = "annual".
+# In daily mode there is no fallback to annual rates.
+2020 = 23.14
+2021 = 21.72
+2022 = 23.41
+2023 = 22.14
+2024 = 23.28
+2025 = 21.84
+
+[ADBE]
+2025 = "FIFO"
+
+[AMD]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[AMZN]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[AVTBF]
+2023 = "FIFO"
+2024 = "FIFO"
+
+[CAKE]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[CCL]
+2020 = "FIFO"
+2021 = "FIFO"
+
+[CELH]
+2025 = "FIFO"
+
+[CRM]
+2025 = "FIFO"
+
+[CRSR]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+
+[DBX]
+2020 = "FIFO"
+2023 = "FIFO"
+
+[EL]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[ELF]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[FL]
+2020 = "FIFO"
+2021 = "FIFO"
+2023 = "FIFO"
+
+[FUBO]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[HNST]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[KO]
+2020 = "FIFO"
+2021 = "FIFO"
+
+[META]
+2025 = "FIFO"
+
+[MSTR]
+2025 = "FIFO"
+
+[NKE]
+2024 = "FIFO"
+2025 = "min_gains"
+
+[NVDA]
+2024 = "FIFO"
+
+[PLNH]
+2021 = "FIFO"
+2024 = "FIFO"
+
+[PLTR]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "max_gains"
+2025 = "time_test_max"
+
+[PYPL]
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "FIFO"
+
+[QCOM]
+2020 = "FIFO"
+
+[SHOP]
+2020 = "FIFO"
+2021 = "FIFO"
+2024 = "FIFO"
+
+[SOFI]
+2024 = "FIFO"
+2025 = "FIFO"
+
+[SWKS]
+2020 = "FIFO"
+2023 = "FIFO"
+
+[TGT]
+2023 = "FIFO"
+2024 = "FIFO"
+
+[TPR]
+2020 = "FIFO"
+
+[TSLA]
+2020 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+2025 = "time_test_max"
+
+[UBER]
+2020 = "FIFO"
+
+[WBA]
+2021 = "FIFO"
+2023 = "FIFO"
+2024 = "FIFO"
+
+[WYNN]
+2020 = "FIFO"
+2023 = "FIFO"
+2025 = "FIFO"

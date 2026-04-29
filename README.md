@@ -4,11 +4,11 @@ Repository obsahuje skript pro export daňových PDF reportů po tickerech a sou
 
 Hlavní skript:
 
-- `taxes/export_ticker_tax_method_pdfs.py`
+- `export_ticker_tax_method_pdfs.py`
 
 Hlavní konfigurace:
 
-- `taxes/tax_methods.toml`
+- `tax_methods.toml`
 
 Vstupní CSV adresář:
 
@@ -16,7 +16,7 @@ Vstupní CSV adresář:
 
 Výstupní PDF adresář:
 
-- `C:\DATA\PROJECTS\STOCKS_raw\taxes\.pdf exports tax methods`
+- `C:\DATA\PROJECTS\STOCKS_raw\.pdf exports tax methods`
 
 ## Požadavky
 
@@ -34,7 +34,7 @@ py -m pip install reportlab
 
 - načte všechny `*.csv` soubory ze vstupního adresáře
 - seskupí transakce globálně podle tickeru napříč brokery
-- pro každý rok použije metodu z `taxes/tax_methods.toml`
+- pro každý rok použije metodu z `tax_methods.toml`
 - vytvoří jedno PDF pro každý ticker
 - vytvoří souhrnné PDF za všechny tickery
 - vytvoří `_export_summary.csv`
@@ -53,19 +53,19 @@ Podporované matching metody:
 Použití výchozích cest:
 
 ```powershell
-py "taxes/export_ticker_tax_method_pdfs.py"
+py "export_ticker_tax_method_pdfs.py"
 ```
 
 Zobrazení helpu:
 
 ```powershell
-py "taxes/export_ticker_tax_method_pdfs.py" --help
+py "export_ticker_tax_method_pdfs.py" --help
 ```
 
 Vlastní cesty:
 
 ```powershell
-py "taxes/export_ticker_tax_method_pdfs.py" --input-dir "C:\DATA\PROJECTS\STOCKS_raw\.csv" --output-dir "C:\DATA\PROJECTS\STOCKS_raw\taxes\.pdf exports tax methods" --tax-methods-file "C:\DATA\PROJECTS\STOCKS_raw\taxes\tax_methods.toml"
+py "export_ticker_tax_method_pdfs.py" --input-dir "C:\DATA\PROJECTS\STOCKS_raw\.csv" --output-dir "C:\DATA\PROJECTS\STOCKS_raw\.pdf exports tax methods" --tax-methods-file "C:\DATA\PROJECTS\STOCKS_raw\tax_methods.toml"
 ```
 
 ## Vygenerování šablony konfigurace
@@ -73,10 +73,10 @@ py "taxes/export_ticker_tax_method_pdfs.py" --input-dir "C:\DATA\PROJECTS\STOCKS
 Pokud chceš nejdřív vytvořit šablonu všech tickerů a roků:
 
 ```powershell
-py "taxes/export_ticker_tax_method_pdfs.py" --write-template
+py "export_ticker_tax_method_pdfs.py" --write-template
 ```
 
-Skript zapíše šablonu do `taxes/tax_methods.toml`.
+Skript zapíše šablonu do `tax_methods.toml`.
 
 ## Konfigurace `tax_methods.toml`
 
