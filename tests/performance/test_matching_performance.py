@@ -5,9 +5,12 @@ from time import perf_counter
 
 import pytest
 
+from stock_tax_report.analysis.ticker_analysis import analyze_ticker
+from stock_tax_report.domain.config import TaxConfig
+
 
 @pytest.mark.performance
-def test_time_test_max_handles_moderate_year_without_regression(tax_module, tx_factory):
+def test_time_test_max_handles_moderate_year_without_regression(tx_factory):
     transactions = []
 
     for index in range(120):
@@ -44,10 +47,10 @@ def test_time_test_max_handles_moderate_year_without_regression(tax_module, tx_f
             )
         )
 
-    config = tax_module.TaxConfig(current_year=2026, methods_by_ticker={"TEST": {2021: "fifo", 2024: "fifo", 2025: "time_test_max"}})
+    config = TaxConfig(current_year=2026, methods_by_ticker={"TEST": {2021: "fifo", 2024: "fifo", 2025: "time_test_max"}})
 
     started = perf_counter()
-    analysis = tax_module.analyze_ticker("TEST", transactions, config)
+    analysis = analyze_ticker("TEST", transactions, config)
     elapsed = perf_counter() - started
 
     assert len(analysis.sell_matches_by_year[2025]) == 80

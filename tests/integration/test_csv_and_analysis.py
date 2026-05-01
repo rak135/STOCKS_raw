@@ -5,9 +5,20 @@ from decimal import Decimal
 
 import pytest
 
+from stock_tax_report.analysis.ticker_analysis import analyze_ticker
+from stock_tax_report.analysis.year_summary import _compute_aggregate_year_summaries
+from stock_tax_report.domain.config import TaxConfig
+from stock_tax_report.domain.fx import FxConfig
+from stock_tax_report.io.csv_discovery import discover_csv_files
+from stock_tax_report.io.csv_parser import (
+    extract_transactions_from_file,
+    group_by_ticker,
+)
+from stock_tax_report.io.fx_loader import load_fx_rate_book
+
 
 @pytest.mark.integration
-def test_cross_source_matching_is_global_per_ticker(tax_module, tmp_path, csv_writer):
+def test_cross_source_matching_is_global_per_ticker(tmp_path, csv_writer):
     input_dir = tmp_path / "csv"
     csv_writer(
         input_dir / "broker_a_portfolio_new.csv",
@@ -35,14 +46,14 @@ def test_cross_source_matching_is_global_per_ticker(tax_module, tmp_path, csv_wr
     )
 
     transactions = []
-    for csv_file in tax_module.discover_csv_files(input_dir):
-        transactions.extend(tax_module.extract_transactions_from_file(csv_file).transactions)
+    for csv_file in discover_csv_files(input_dir):
+        transactions.extend(extract_transactions_from_file(csv_file).transactions)
 
-    grouped = tax_module.group_by_ticker(transactions)
-    analysis = tax_module.analyze_ticker(
+    grouped = group_by_ticker(transactions)
+    analysis = analyze_ticker(
         "PLTR",
         grouped["PLTR"],
-        tax_module.TaxConfig(current_year=2026, methods_by_ticker={"PLTR": {2021: "fifo", 2025: "fifo"}}),
+        TaxConfig(current_year=2026, methods_by_ticker={"PLTR": {2021: "fifo", 2025: "fifo"}}),
     )
 
     sell_match = analysis.sell_matches_by_year[2025][0]
@@ -51,29 +62,29 @@ def test_cross_source_matching_is_global_per_ticker(tax_module, tmp_path, csv_wr
 
 
 @pytest.mark.integration
-def test_aggregate_year_summary_sums_all_tickers(tax_module, tx_factory):
-    alpha = tax_module.analyze_ticker(
+def test_aggregate_year_summary_sums_all_tickers(tx_factory):
+    alpha = analyze_ticker(
         "AAA",
         [
             tx_factory(ticker="AAA", action="BUY", when=date(2021, 1, 1), quantity="1", price="10", source_file="a.csv"),
             tx_factory(ticker="AAA", action="SELL", when=date(2025, 1, 1), quantity="1", price="50", source_file="a.csv", row_number=3),
         ],
-        tax_module.TaxConfig(current_year=2026, methods_by_ticker={"AAA": {2021: "fifo", 2025: "fifo"}}),
+        TaxConfig(current_year=2026, methods_by_ticker={"AAA": {2021: "fifo", 2025: "fifo"}}),
     )
-    beta = tax_module.analyze_ticker(
+    beta = analyze_ticker(
         "BBB",
         [
             tx_factory(ticker="BBB", action="BUY", when=date(2024, 1, 1), quantity="1", price="30", source_file="b.csv"),
             tx_factory(ticker="BBB", action="SELL", when=date(2025, 1, 2), quantity="1", price="20", source_file="b.csv", row_number=3),
         ],
-        tax_module.TaxConfig(current_year=2026, methods_by_ticker={"BBB": {2024: "fifo", 2025: "fifo"}}),
+        TaxConfig(current_year=2026, methods_by_ticker={"BBB": {2024: "fifo", 2025: "fifo"}}),
     )
 
-    fx_rate_book = tax_module.load_fx_rate_book(
-        tax_module.FxConfig(mode="annual", annual_rates={2021: Decimal("20"), 2024: Decimal("22"), 2025: Decimal("25")})
+    fx_rate_book = load_fx_rate_book(
+        FxConfig(mode="annual", annual_rates={2021: Decimal("20"), 2024: Decimal("22"), 2025: Decimal("25")})
     )
 
-    summaries = tax_module._compute_aggregate_year_summaries([alpha, beta], 2026, fx_rate_book)
+    summaries = _compute_aggregate_year_summaries([alpha, beta], 2026, fx_rate_book)
 
     assert summaries[2025].total_income == Decimal("70")
     assert summaries[2025].total_income_czk == Decimal("1750")

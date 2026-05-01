@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import csv
-import importlib.util
-import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -10,22 +8,11 @@ from typing import Iterable
 
 import pytest
 
-
-TAX_EXPORT_PATH = Path(__file__).resolve().parents[1] / "export_ticker_tax_method_pdfs.py"
-
-
-@pytest.fixture(scope="session")
-def tax_module():
-    spec = importlib.util.spec_from_file_location("tax_export_module", TAX_EXPORT_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+from stock_tax_report.domain.transactions import Transaction
 
 
 @pytest.fixture
-def tx_factory(tax_module):
+def tx_factory():
     def _make(
         *,
         ticker: str = "TEST",
@@ -36,7 +23,7 @@ def tx_factory(tax_module):
         source_file: str = "broker.csv",
         row_number: int = 2,
     ):
-        return tax_module.Transaction(
+        return Transaction(
             source_file=source_file,
             broker_source=source_file.split("_", 1)[0],
             ticker=ticker,

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import sys
-
 import pytest
+
+from stock_tax_report.cli import main as cli_main
 
 
 @pytest.mark.end_to_end
-def test_main_generates_all_expected_export_artifacts(tax_module, tmp_path, csv_writer, monkeypatch):
+def test_main_generates_all_expected_export_artifacts(tmp_path, csv_writer):
     input_dir = tmp_path / "csv"
     output_dir = tmp_path / "out"
+    bundle_root = tmp_path / "bundles"
     tax_methods_file = tmp_path / "tax_methods.toml"
 
     csv_writer(
@@ -36,31 +37,24 @@ def test_main_generates_all_expected_export_artifacts(tax_module, tmp_path, csv_
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "export_ticker_tax_method_pdfs.py",
-            "--input-dir",
-            str(input_dir),
-            "--output-dir",
-            str(output_dir),
-            "--tax-methods-file",
-            str(tax_methods_file),
-        ],
-    )
+    rc = cli_main([
+        "--input-dir", str(input_dir),
+        "--output-dir", str(output_dir),
+        "--tax-methods-file", str(tax_methods_file),
+        "--bundle-root", str(bundle_root),
+    ])
 
-    result = tax_module.main()
-
-    assert result == 0
+    assert rc == 0
     assert (output_dir / "PLTR.pdf").exists()
     assert (output_dir / "_all_tickers_year_summary.pdf").exists()
     assert (output_dir / "_export_summary.csv").exists()
     assert (output_dir / "_export_warnings.txt").exists()
+    assert (bundle_root / "tax_2026" / "05_outputs" / "PLTR.pdf").exists()
+    assert (bundle_root / "tax_2026" / "bundle.json").exists()
 
 
 @pytest.mark.end_to_end
-def test_write_template_creates_tax_methods_stub(tax_module, tmp_path, csv_writer, monkeypatch):
+def test_write_template_creates_tax_methods_stub(tmp_path, csv_writer):
     input_dir = tmp_path / "csv"
     tax_methods_file = tmp_path / "tax_methods.toml"
 
@@ -72,22 +66,13 @@ def test_write_template_creates_tax_methods_stub(tax_module, tmp_path, csv_write
         ],
     )
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "export_ticker_tax_method_pdfs.py",
-            "--input-dir",
-            str(input_dir),
-            "--tax-methods-file",
-            str(tax_methods_file),
-            "--write-template",
-        ],
-    )
+    rc = cli_main([
+        "--input-dir", str(input_dir),
+        "--tax-methods-file", str(tax_methods_file),
+        "--write-template",
+    ])
 
-    result = tax_module.main()
-
-    assert result == 0
+    assert rc == 0
     text = tax_methods_file.read_text(encoding="utf-8")
     assert "current_year = 2025" in text
     assert 'fx_mode = "annual"' in text
