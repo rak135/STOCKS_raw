@@ -4,11 +4,9 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 from stock_tax_report.analysis.ticker_analysis import analyze_ticker
 from stock_tax_report.analysis.year_summary import _compute_aggregate_year_summaries
-from stock_tax_report.domain.analysis import TickerAnalysis
 from stock_tax_report.domain.config import TaxConfig
 from stock_tax_report.domain.fx import FxConfig
 from stock_tax_report.domain.lots import BuyLot
@@ -35,11 +33,7 @@ from stock_tax_report.io.tax_config_loader import (
     write_template_file,
 )
 from stock_tax_report.matching.standard import match_sell_transaction
-from stock_tax_report.render.cleanup import _clear_previous_exports
-from stock_tax_report.render.pdf_all_tickers import build_all_tickers_year_summary_pdf
-from stock_tax_report.render.pdf_ticker import build_pdf_for_ticker
-from stock_tax_report.render.summary_csv import write_summary
-from stock_tax_report.render.warnings_txt import write_warnings
+from stock_tax_report.pipeline import run as run_pipeline
 
 
 DEFAULT_INPUT_DIR = Path(r"C:\DATA\PROJECTS\STOCKS_raw\.csv")
@@ -65,6 +59,9 @@ def main() -> int:
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--tax-methods-file", type=Path, default=DEFAULT_TAX_METHODS_FILE)
+    parser.add_argument("--bundle-root", type=Path, default=None)
+    parser.add_argument("--notes-dir", type=Path, default=None)
+    parser.add_argument("--broker-exports-dir", type=Path, default=None)
     parser.add_argument(
         "--write-template",
         action="store_true",
@@ -72,25 +69,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    try:
-        csv_files = discover_csv_files(args.input_dir)
-    except FileNotFoundError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    all_transactions: List[Transaction] = []
-    all_warnings: List[str] = []
-    all_mapping_notes: List[str] = []
-
-    for csv_file in csv_files:
-        result = extract_transactions_from_file(csv_file)
-        all_transactions.extend(result.transactions)
-        all_warnings.extend(result.warnings)
-        all_mapping_notes.extend(result.mapping_notes)
-
-    grouped = group_by_ticker(all_transactions)
-
     if args.write_template:
+        try:
+            csv_files = discover_csv_files(args.input_dir)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        all_transactions = []
+        for csv_file in csv_files:
+            all_transactions.extend(extract_transactions_from_file(csv_file).transactions)
+        grouped = group_by_ticker(all_transactions)
         current_year = _infer_template_current_year(all_transactions)
         template_path = write_template_file(args.tax_methods_file, grouped, current_year)
         print(f"Template written: {template_path}")
@@ -99,61 +87,30 @@ def main() -> int:
         return 0
 
     try:
-        config = load_tax_config(args.tax_methods_file)
+        result = run_pipeline(
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
+            tax_methods_file=args.tax_methods_file,
+            generated_at=datetime.now(),
+            bundle_root=args.bundle_root,
+            notes_dir=args.notes_dir,
+            broker_exports_dir=args.broker_exports_dir,
+        )
     except (FileNotFoundError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
-    try:
-        fx_rate_book = load_fx_rate_book(config.fx_config)
-    except (FileNotFoundError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    validation_errors = validate_tax_config(grouped, config)
-    if validation_errors:
-        print("Tax methods validation failed:", file=sys.stderr)
-        for error in validation_errors:
-            print(f"- {error}", file=sys.stderr)
-        return 2
-
-    analyses: List[TickerAnalysis] = []
-    try:
-        for ticker, transactions in grouped.items():
-            analyses.append(analyze_ticker(ticker, transactions, config))
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    _clear_previous_exports(args.output_dir)
-
-    generated_at = datetime.now()
-    created_pdfs: List[Path] = []
-    for analysis in analyses:
-        created_pdfs.append(build_pdf_for_ticker(analysis, args.output_dir, generated_at, config.current_year, fx_rate_book))
-    all_tickers_summary_pdf = build_all_tickers_year_summary_pdf(
-        analyses,
-        args.output_dir,
-        generated_at,
-        config.current_year,
-        fx_rate_book,
-    )
-
-    summary_path = write_summary(args.output_dir, analyses, fx_rate_book)
-    warnings_path = write_warnings(args.output_dir, all_warnings, all_mapping_notes, analyses, generated_at)
-
-    ignored_current_year_sell_count = sum(len(item.ignored_current_year_sells) for item in analyses)
-
-    print(f"CSV files read: {len(csv_files)}")
-    print(f"Valid BUY/SELL transactions parsed: {len(all_transactions)}")
-    print(f"Ticker PDFs created: {len(created_pdfs)}")
-    print(f"Ignored current-year SELL transactions: {ignored_current_year_sell_count}")
-    print(f"All-tickers year summary PDF: {all_tickers_summary_pdf}")
-    for pdf_path in created_pdfs:
+    print(f"CSV files read: {result.csv_files_read}")
+    print(f"Valid BUY/SELL transactions parsed: {result.transactions_parsed}")
+    print(f"Ticker PDFs created: {result.pdfs_created}")
+    print(f"Ignored current-year SELL transactions: {result.ignored_current_year_sells}")
+    print(f"All-tickers year summary PDF: {result.all_tickers_pdf_path}")
+    for pdf_path in result.pdf_paths:
         print(f"PDF: {pdf_path}")
-    print(f"Summary: {summary_path}")
-    print(f"Warnings: {warnings_path}")
+    print(f"Summary: {result.summary_csv_path}")
+    print(f"Warnings: {result.warnings_txt_path}")
+    if result.bundle_dir is not None:
+        print(f"Bundle: {result.bundle_dir}")
 
     return 0
 
