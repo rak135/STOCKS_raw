@@ -22,7 +22,21 @@ def test_export_fails_when_tax_method_missing_for_required_year(tmp_path, csv_wr
             {"Symbol": "NKE", "Trade Date": "20250210", "Purchase Price": "50", "Quantity": "2", "Transaction Type": "SELL"},
         ],
     )
-    tax_methods_file.write_text('current_year = 2026\n\n[NKE]\n2024 = "FIFO"\n', encoding="utf-8")
+    tax_methods_file.write_text(
+        'current_year = 2026\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2024 = "annual"\n'
+        '2025 = "annual"\n'
+        '\n'
+        '[fx_annual_rates]\n'
+        '2024 = 23\n'
+        '2025 = 25\n'
+        '\n'
+        '[NKE]\n'
+        '2024 = "FIFO"\n',
+        encoding="utf-8",
+    )
 
     rc = cli_main([
         "--input-dir", str(input_dir),

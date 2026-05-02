@@ -66,7 +66,7 @@ def test_daily_resolution_uses_bisect_right_minus_one(tmp_path: Path):
         "05.01.2025|24,500\n",
         encoding="utf-8",
     )
-    book = load_fx_rate_book(FxConfig(mode="daily", daily_file=fx_file, annual_rates={}))
+    book = load_fx_rate_book(FxConfig(mode_by_year={2025: "daily"}, daily_file=fx_file, annual_rates={}))
     # Exact match
     assert resolve_usd_to_czk_rate(book, date(2025, 1, 2)) == Decimal("24.000")
     # Between known dates -> previous available
@@ -79,15 +79,15 @@ def test_daily_resolution_uses_bisect_right_minus_one(tmp_path: Path):
 def test_daily_resolution_before_first_date_raises(tmp_path: Path):
     fx_file = tmp_path / "cnb_2025.txt"
     fx_file.write_text("Datum|1 USD\n10.01.2025|24,000\n", encoding="utf-8")
-    book = load_fx_rate_book(FxConfig(mode="daily", daily_file=fx_file, annual_rates={}))
+    book = load_fx_rate_book(FxConfig(mode_by_year={2025: "daily"}, daily_file=fx_file, annual_rates={}))
     with pytest.raises(ValueError, match="Missing daily FX rate"):
         resolve_usd_to_czk_rate(book, date(2025, 1, 5))
 
 
 @pytest.mark.unit
-def test_annual_mode_missing_year_raises():
+def test_annual_mode_missing_rate_raises():
     book = load_fx_rate_book(
-        FxConfig(mode="annual", annual_rates={2024: Decimal("23")})
+        FxConfig(mode_by_year={2024: "annual", 2025: "annual"}, annual_rates={2024: Decimal("23")})
     )
     assert resolve_usd_to_czk_rate(book, date(2024, 6, 1)) == Decimal("23")
     with pytest.raises(ValueError, match="Missing annual FX rate"):
@@ -95,14 +95,32 @@ def test_annual_mode_missing_year_raises():
 
 
 @pytest.mark.unit
+def test_resolve_raises_for_year_without_mode_entry():
+    book = load_fx_rate_book(
+        FxConfig(mode_by_year={2024: "annual"}, annual_rates={2024: Decimal("23")})
+    )
+    with pytest.raises(ValueError, match="Missing fx_mode_by_year entry for year 2025"):
+        resolve_usd_to_czk_rate(book, date(2025, 6, 1))
+
+
+@pytest.mark.unit
 def test_load_fx_rate_book_daily_requires_existing_file(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         load_fx_rate_book(
-            FxConfig(mode="daily", daily_file=tmp_path / "missing.txt", annual_rates={})
+            FxConfig(mode_by_year={2024: "daily"}, daily_file=tmp_path / "missing.txt", annual_rates={})
         )
 
 
 @pytest.mark.unit
 def test_load_fx_rate_book_daily_requires_path():
     with pytest.raises(ValueError, match="fx_daily_file"):
-        load_fx_rate_book(FxConfig(mode="daily", daily_file=None, annual_rates={}))
+        load_fx_rate_book(FxConfig(mode_by_year={2024: "daily"}, daily_file=None, annual_rates={}))
+
+
+@pytest.mark.unit
+def test_load_fx_rate_book_skips_daily_load_when_no_daily_year():
+    # No daily years -> daily_file None is fine
+    book = load_fx_rate_book(
+        FxConfig(mode_by_year={2024: "annual"}, annual_rates={2024: Decimal("23")})
+    )
+    assert book.daily_dates == []

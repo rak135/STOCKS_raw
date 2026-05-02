@@ -23,7 +23,11 @@ def test_main_generates_all_expected_export_artifacts(tmp_path, csv_writer):
     )
     tax_methods_file.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2021 = "annual"\n'
+        '2023 = "annual"\n'
+        '2025 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2021 = 21\n'
@@ -75,6 +79,6 @@ def test_write_template_creates_tax_methods_stub(tmp_path, csv_writer):
     assert rc == 0
     text = tax_methods_file.read_text(encoding="utf-8")
     assert "current_year = 2025" in text
-    assert 'fx_mode = "annual"' in text
+    assert "[fx_mode_by_year]" in text
     assert "[fx_annual_rates]" in text
     assert "[NKE]" in text

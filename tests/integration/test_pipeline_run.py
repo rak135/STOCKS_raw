@@ -36,7 +36,10 @@ def test_run_without_bundle_root_writes_only_outputs(tmp_path: Path, csv_writer)
     )
     tax_methods_file.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2021 = "annual"\n'
+        '2025 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2021 = 21\n'
@@ -80,7 +83,10 @@ def test_run_with_bundle_root_assembles_full_tree(tmp_path: Path, csv_writer):
     )
     tax_methods_file.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2021 = "annual"\n'
+        '2025 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2021 = 21\n'
@@ -146,7 +152,10 @@ def test_run_skips_optional_dirs_when_missing(tmp_path: Path, csv_writer):
     )
     tax_methods_file.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2021 = "annual"\n'
+        '2025 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2021 = 21\n'

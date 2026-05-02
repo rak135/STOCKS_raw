@@ -17,7 +17,7 @@ def write_summary(output_dir: Path, analyses: List[TickerAnalysis], fx_rate_book
             [
                 "ticker",
                 "pdf_file",
-                "fx_mode",
+                "fx_modes",
                 "year_count",
                 "sell_count",
                 "ignored_current_year_sell_count",
@@ -28,11 +28,14 @@ def write_summary(output_dir: Path, analyses: List[TickerAnalysis], fx_rate_book
 
         for analysis in analyses:
             sell_count = sum(len(items) for items in analysis.sell_matches_by_year.values())
+            fx_modes = ";".join(
+                f"{year}={fx_rate_book.mode_for(year) or '?'}" for year in sorted(analysis.years)
+            )
             writer.writerow(
                 [
                     analysis.ticker,
                     f"{_safe_pdf_name(analysis.ticker)}.pdf",
-                    fx_rate_book.mode,
+                    fx_modes,
                     len(analysis.years),
                     sell_count,
                     len(analysis.ignored_current_year_sells),

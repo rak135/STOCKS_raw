@@ -25,7 +25,10 @@ def test_build_pdf_for_ticker_writes_non_empty_pdf(tmp_path: Path, tx_factory):
         txs,
         TaxConfig(current_year=2026, methods_by_ticker={"AAA": {2024: "fifo", 2025: "fifo"}}),
     )
-    book = load_fx_rate_book(FxConfig(mode="annual", annual_rates={2024: Decimal("23"), 2025: Decimal("25")}))
+    book = load_fx_rate_book(FxConfig(
+        mode_by_year={2024: "annual", 2025: "annual"},
+        annual_rates={2024: Decimal("23"), 2025: Decimal("25")},
+    ))
 
     pdf_path = build_pdf_for_ticker(analysis, tmp_path, datetime(2026, 4, 1, 12, 0, 0), 2026, book)
 
@@ -46,7 +49,10 @@ def test_build_all_tickers_year_summary_pdf_writes_pdf(tmp_path: Path, tx_factor
         txs,
         TaxConfig(current_year=2026, methods_by_ticker={"AAA": {2024: "fifo", 2025: "fifo"}}),
     )
-    book = load_fx_rate_book(FxConfig(mode="annual", annual_rates={2024: Decimal("23"), 2025: Decimal("25")}))
+    book = load_fx_rate_book(FxConfig(
+        mode_by_year={2024: "annual", 2025: "annual"},
+        annual_rates={2024: Decimal("23"), 2025: Decimal("25")},
+    ))
 
     pdf_path = build_all_tickers_year_summary_pdf(
         [analysis], tmp_path, datetime(2026, 4, 1, 12, 0, 0), 2026, book
@@ -66,7 +72,7 @@ def test_pdf_for_ticker_with_no_history_still_renders(tmp_path: Path, tx_factory
         txs,
         TaxConfig(current_year=2026, methods_by_ticker={"AAA": {2024: "fifo"}}),
     )
-    book = load_fx_rate_book(FxConfig(mode="annual", annual_rates={2024: Decimal("23")}))
+    book = load_fx_rate_book(FxConfig(mode_by_year={2024: "annual"}, annual_rates={2024: Decimal("23")}))
     pdf_path = build_pdf_for_ticker(analysis, tmp_path, datetime(2026, 4, 1, 12, 0, 0), 2026, book)
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 0

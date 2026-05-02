@@ -76,7 +76,7 @@ def build_all_tickers_year_summary_pdf(
 
     story = [
         Paragraph(
-            f"All Tickers Year Summary | FX mode: {fx_rate_book.mode} | Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"All Tickers Year Summary | FX mode: per-year | Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}",
             title_style,
         ),
         Spacer(1, 8),

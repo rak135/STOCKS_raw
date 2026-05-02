@@ -17,7 +17,10 @@ from stock_tax_report.io.fx_loader import load_fx_rate_book
 
 
 def _annual_book(rates):
-    return load_fx_rate_book(FxConfig(mode="annual", annual_rates=rates))
+    return load_fx_rate_book(FxConfig(
+        mode_by_year={year: "annual" for year in rates},
+        annual_rates=rates,
+    ))
 
 
 @pytest.mark.unit

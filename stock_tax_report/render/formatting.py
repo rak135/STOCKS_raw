@@ -43,7 +43,8 @@ def _fmt_usd_czk_pair(usd_value: Optional[Decimal], czk_value: Optional[Decimal]
 def _year_fx_label(year: int, current_year: int, fx_rate_book: FxRateBook) -> str:
     if year >= current_year:
         return "FX=n/a"
-    return f"FX={fx_rate_book.mode}"
+    mode = fx_rate_book.mode_for(year)
+    return f"FX={mode}" if mode is not None else "FX=?"
 
 
 def _source_ref(source_file: str, row_number: int) -> str:

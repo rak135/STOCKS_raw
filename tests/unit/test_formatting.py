@@ -45,7 +45,7 @@ def test_safe_pdf_name_strips_unsafe_characters():
 
 @pytest.mark.unit
 def test_year_fx_label_marks_current_year_as_n_a():
-    book = FxRateBook(mode="daily", daily_file=None, annual_rates={})
+    book = FxRateBook(mode_by_year={2025: "daily"}, daily_file=None, annual_rates={})
     assert _year_fx_label(2026, current_year=2026, fx_rate_book=book) == "FX=n/a"
     assert _year_fx_label(2025, current_year=2026, fx_rate_book=book) == "FX=daily"
 

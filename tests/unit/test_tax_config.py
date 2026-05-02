@@ -17,8 +17,42 @@ from stock_tax_report.io.tax_config_loader import (
 @pytest.mark.unit
 def test_load_tax_config_rejects_missing_current_year(tmp_path: Path):
     path = tmp_path / "tax_methods.toml"
-    path.write_text('fx_mode = "annual"\n', encoding="utf-8")
+    path.write_text('[fx_mode_by_year]\n2024 = "annual"\n', encoding="utf-8")
     with pytest.raises(ValueError, match="missing top-level 'current_year'"):
+        load_tax_config(path)
+
+
+@pytest.mark.unit
+def test_load_tax_config_rejects_legacy_fx_mode(tmp_path: Path):
+    path = tmp_path / "tax_methods.toml"
+    path.write_text(
+        'current_year = 2026\n'
+        'fx_mode = "annual"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="'fx_mode' is no longer supported"):
+        load_tax_config(path)
+
+
+@pytest.mark.unit
+def test_load_tax_config_rejects_missing_fx_mode_by_year(tmp_path: Path):
+    path = tmp_path / "tax_methods.toml"
+    path.write_text('current_year = 2026\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="missing top-level \\[fx_mode_by_year\\] table"):
+        load_tax_config(path)
+
+
+@pytest.mark.unit
+def test_load_tax_config_rejects_unknown_fx_mode_value(tmp_path: Path):
+    path = tmp_path / "tax_methods.toml"
+    path.write_text(
+        'current_year = 2026\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2025 = "monthly"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be 'daily' or 'annual'"):
         load_tax_config(path)
 
 
@@ -27,7 +61,9 @@ def test_load_tax_config_rejects_unknown_method(tmp_path: Path):
     path = tmp_path / "tax_methods.toml"
     path.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2024 = "annual"\n'
         '\n'
         '[AAA]\n'
         '2024 = "AVERAGE"\n',
@@ -38,23 +74,13 @@ def test_load_tax_config_rejects_unknown_method(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_load_tax_config_rejects_unknown_fx_mode(tmp_path: Path):
-    path = tmp_path / "tax_methods.toml"
-    path.write_text(
-        'current_year = 2026\n'
-        'fx_mode = "monthly"\n',
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="fx_mode"):
-        load_tax_config(path)
-
-
-@pytest.mark.unit
 def test_load_tax_config_rejects_invalid_year_key(tmp_path: Path):
     path = tmp_path / "tax_methods.toml"
     path.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2024 = "annual"\n'
         '\n'
         '[AAA]\n'
         'twenty = "FIFO"\n',
@@ -69,7 +95,9 @@ def test_load_tax_config_normalises_method_case(tmp_path: Path):
     path = tmp_path / "tax_methods.toml"
     path.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2024 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2024 = "23.28"\n'
@@ -81,6 +109,7 @@ def test_load_tax_config_normalises_method_case(tmp_path: Path):
     config = load_tax_config(path)
     assert config.methods_by_ticker["AAA"][2024] == "time_test_max"
     assert config.fx_config.annual_rates[2024] == Decimal("23.28")
+    assert config.fx_config.mode_by_year == {2024: "annual"}
 
 
 @pytest.mark.unit
@@ -102,6 +131,8 @@ def test_build_template_text_lists_only_past_years_per_ticker(tx_factory):
     }
     text = build_template_text(grouped, current_year=2025)
     assert "current_year = 2025" in text
+    assert "[fx_mode_by_year]" in text
+    assert '2023 = "annual"' in text
     assert "[fx_annual_rates]" in text
     assert "[AAA]" in text
     assert "2023 = \"\"" in text

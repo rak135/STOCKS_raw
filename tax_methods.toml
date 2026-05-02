@@ -1,10 +1,17 @@
 current_year = 2026
-fx_mode = "daily"
 fx_daily_file = "C:\\DATA\\PROJECTS\\STOCKS_raw\\.csv\\fx\\cnb_2025.txt"
 
+[fx_mode_by_year]
+# Choose per year: "daily" reads cnb_*.txt files, "annual" uses fx_annual_rates.
+2020 = "daily"
+2021 = "daily"
+2022 = "daily"
+2023 = "daily"
+2024 = "daily"
+2025 = "daily"
+
 [fx_annual_rates]
-# Fill these when fx_mode = "annual".
-# In daily mode there is no fallback to annual rates.
+# Used only for years marked "annual" in [fx_mode_by_year].
 2020 = 23.14
 2021 = 21.72
 2022 = 23.41

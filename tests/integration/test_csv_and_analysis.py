@@ -81,7 +81,10 @@ def test_aggregate_year_summary_sums_all_tickers(tx_factory):
     )
 
     fx_rate_book = load_fx_rate_book(
-        FxConfig(mode="annual", annual_rates={2021: Decimal("20"), 2024: Decimal("22"), 2025: Decimal("25")})
+        FxConfig(
+            mode_by_year={2021: "annual", 2024: "annual", 2025: "annual"},
+            annual_rates={2021: Decimal("20"), 2024: Decimal("22"), 2025: Decimal("25")},
+        )
     )
 
     summaries = _compute_aggregate_year_summaries([alpha, beta], 2026, fx_rate_book)

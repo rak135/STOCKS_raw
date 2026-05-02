@@ -49,7 +49,7 @@ def fake_run_tree(tmp_path: Path) -> dict[str, Path]:
     (sources / "csv" / "broker_b.csv").write_text("Symbol,Quantity\nBBB,2\n", encoding="utf-8")
     (sources / "fx" / "cnb_2025.txt").write_text("Datum|Kurz\n01.01.2025|24.0\n", encoding="utf-8")
     (sources / "tax_methods.toml").write_text(
-        'current_year = 2026\nfx_mode = "annual"\n[fx_annual_rates]\n2025 = 25\n[AAA]\n2025 = "FIFO"\n',
+        'current_year = 2026\n[fx_mode_by_year]\n2025 = "annual"\n[fx_annual_rates]\n2025 = 25\n[AAA]\n2025 = "FIFO"\n',
         encoding="utf-8",
     )
     (sources / "notes" / "audit.md").write_text("# Audit notes\nLooks good.\n", encoding="utf-8")
@@ -69,7 +69,7 @@ def test_assemble_bundle_creates_full_layout(fake_run_tree):
     config = TaxConfig(
         current_year=2026,
         methods_by_ticker={"AAA": {2025: "fifo"}},
-        fx_config=FxConfig(mode="annual", annual_rates={2025: Decimal("25")}),
+        fx_config=FxConfig(mode_by_year={2025: "annual"}, annual_rates={2025: Decimal("25")}),
     )
     package_hash = "x" * 64
     readme = render_methodology_readme(config, year=2025, package_hash=package_hash)
@@ -159,7 +159,10 @@ def test_methodology_readme_includes_year_and_methods():
     config = TaxConfig(
         current_year=2026,
         methods_by_ticker={"AAA": {2024: "fifo", 2025: "time_test_max"}},
-        fx_config=FxConfig(mode="annual", annual_rates={2024: Decimal("23"), 2025: Decimal("25")}),
+        fx_config=FxConfig(
+            mode_by_year={2024: "annual", 2025: "annual"},
+            annual_rates={2024: Decimal("23"), 2025: Decimal("25")},
+        ),
     )
     readme = render_methodology_readme(config, year=2025, package_hash="deadbeef")
     assert "Year 2025" in readme

@@ -14,6 +14,7 @@ from stock_tax_report.io.parsing import normalize_ticker, parse_decimal
 
 ALLOWED_METHODS = {"fifo", "lifo", "max_gains", "min_gains", "time_test_max"}
 ALLOWED_FX_MODES = {"annual", "daily"}
+RESERVED_TOP_LEVEL_KEYS = {"current_year", "fx_daily_file", "fx_annual_rates", "fx_mode_by_year"}
 
 
 def _normalize_method_name(value: object) -> Optional[str]:
@@ -31,17 +32,6 @@ def _parse_current_year(raw_value: object) -> int:
     if isinstance(raw_value, str) and raw_value.strip().isdigit():
         return int(raw_value.strip())
     raise ValueError("tax_methods.toml: 'current_year' must be an integer")
-
-
-def _parse_fx_mode(raw_value: object) -> str:
-    if raw_value is None:
-        return "annual"
-    if not isinstance(raw_value, str):
-        raise ValueError("tax_methods.toml: 'fx_mode' must be 'daily' or 'annual'")
-    normalized = raw_value.strip().lower()
-    if normalized not in ALLOWED_FX_MODES:
-        raise ValueError("tax_methods.toml: 'fx_mode' must be 'daily' or 'annual'")
-    return normalized
 
 
 def _parse_decimal_config_value(raw_value: object, field_name: str) -> Decimal:
@@ -80,6 +70,28 @@ def _parse_fx_annual_rates(raw_value: object) -> Dict[int, Decimal]:
     return annual_rates
 
 
+def _parse_fx_mode_by_year(raw_value: object) -> Dict[int, str]:
+    if raw_value is None:
+        raise ValueError("tax_methods.toml: missing top-level [fx_mode_by_year] table")
+    if not isinstance(raw_value, dict):
+        raise ValueError("tax_methods.toml: 'fx_mode_by_year' must be a table")
+
+    modes: Dict[int, str] = {}
+    for year_key, mode_value in raw_value.items():
+        year_text = str(year_key).strip()
+        if not year_text.isdigit():
+            raise ValueError(f"tax_methods.toml: fx_mode_by_year has invalid year key '{year_key}'")
+        if not isinstance(mode_value, str):
+            raise ValueError(f"tax_methods.toml: fx_mode_by_year[{year_text}] must be a string")
+        normalized = mode_value.strip().lower()
+        if normalized not in ALLOWED_FX_MODES:
+            raise ValueError(
+                f"tax_methods.toml: fx_mode_by_year[{year_text}] must be 'daily' or 'annual'"
+            )
+        modes[int(year_text)] = normalized
+    return modes
+
+
 def load_tax_config(tax_methods_file: Path) -> TaxConfig:
     if not tax_methods_file.exists():
         raise FileNotFoundError(f"Tax methods file does not exist: {tax_methods_file}")
@@ -91,17 +103,21 @@ def load_tax_config(tax_methods_file: Path) -> TaxConfig:
 
     if "current_year" not in data:
         raise ValueError("tax_methods.toml: missing top-level 'current_year'")
+    if "fx_mode" in data:
+        raise ValueError(
+            "tax_methods.toml: 'fx_mode' is no longer supported; use [fx_mode_by_year] instead"
+        )
 
     current_year = _parse_current_year(data["current_year"])
     fx_config = FxConfig(
-        mode=_parse_fx_mode(data.get("fx_mode")),
+        mode_by_year=_parse_fx_mode_by_year(data.get("fx_mode_by_year")),
         daily_file=_parse_fx_daily_file(data.get("fx_daily_file")),
         annual_rates=_parse_fx_annual_rates(data.get("fx_annual_rates")),
     )
     methods_by_ticker: Dict[str, Dict[int, str]] = {}
 
     for key, value in data.items():
-        if key in {"current_year", "fx_mode", "fx_daily_file", "fx_annual_rates"}:
+        if key in RESERVED_TOP_LEVEL_KEYS:
             continue
 
         if not isinstance(value, dict):
@@ -137,14 +153,21 @@ def _infer_template_current_year(transactions: Iterable[Transaction]) -> int:
 def build_template_text(grouped: Dict[str, List[Transaction]], current_year: int) -> str:
     lines: List[str] = []
     lines.append("current_year = %s" % current_year)
-    lines.append('fx_mode = "annual"')
     lines.append('fx_daily_file = ""')
     lines.append("")
 
     all_years = sorted({tx.date.year for transactions in grouped.values() for tx in transactions})
-    if all_years:
+    past_years = [year for year in all_years if year < current_year]
+
+    if past_years:
+        lines.append("[fx_mode_by_year]")
+        for year in past_years:
+            lines.append(f'{year} = "annual"')
+        lines.append("")
+
+    if past_years:
         lines.append("[fx_annual_rates]")
-        for year in all_years:
+        for year in past_years:
             lines.append(f'{year} = ""')
         lines.append("")
 
@@ -170,10 +193,20 @@ def write_template_file(tax_methods_file: Path, grouped: Dict[str, List[Transact
 def validate_tax_config(grouped: Dict[str, List[Transaction]], config: TaxConfig) -> List[str]:
     errors: List[str] = []
 
+    required_years = sorted(
+        {tx.date.year for transactions in grouped.values() for tx in transactions if tx.date.year < config.current_year}
+    )
+    for year in required_years:
+        if year not in config.fx_config.mode_by_year:
+            errors.append(f"fx_mode_by_year is missing entry for year {year}")
+            continue
+        if config.fx_config.mode_by_year[year] == "annual" and year not in config.fx_config.annual_rates:
+            errors.append(f"fx_annual_rates is missing entry for year {year}")
+
     for ticker, transactions in grouped.items():
-        required_years = sorted({tx.date.year for tx in transactions if tx.date.year < config.current_year})
+        ticker_required_years = sorted({tx.date.year for tx in transactions if tx.date.year < config.current_year})
         ticker_methods = config.methods_by_ticker.get(ticker, {})
-        for year in required_years:
+        for year in ticker_required_years:
             if year not in ticker_methods:
                 errors.append(f"ticker '{ticker}' is missing tax method for year {year}")
 

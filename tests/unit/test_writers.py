@@ -27,15 +27,19 @@ def simple_analysis(tx_factory):
 
 @pytest.mark.unit
 def test_write_summary_emits_expected_header_and_row(tmp_path: Path, simple_analysis):
-    book = load_fx_rate_book(FxConfig(mode="annual", annual_rates={2024: Decimal("23"), 2025: Decimal("25")}))
+    book = load_fx_rate_book(FxConfig(
+        mode_by_year={2024: "annual", 2025: "annual"},
+        annual_rates={2024: Decimal("23"), 2025: Decimal("25")},
+    ))
     path = write_summary(tmp_path, [simple_analysis], book)
 
     content = path.read_text(encoding="utf-8").splitlines()
-    assert content[0] == "ticker,pdf_file,fx_mode,year_count,sell_count,ignored_current_year_sell_count,open_qty,source_files"
+    assert content[0] == "ticker,pdf_file,fx_modes,year_count,sell_count,ignored_current_year_sell_count,open_qty,source_files"
     fields = content[1].split(",")
     assert fields[0] == "AAA"
     assert fields[1] == "AAA.pdf"
-    assert fields[2] == "annual"
+    assert fields[2].startswith("2024=annual")  # per-year encoded
+    assert "2025=annual" in fields[2]
     assert fields[5] == "1"  # one ignored 2026 sell
 
 

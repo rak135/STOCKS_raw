@@ -9,24 +9,26 @@ from stock_tax_report.render.formatting import METHOD_LABELS
 def _render_fx_section(config: TaxConfig) -> str:
     fx = config.fx_config
     lines: List[str] = []
-    lines.append(f"Mode: `{fx.mode}`")
-    lines.append("")
-    if fx.mode == "daily":
+
+    if fx.mode_by_year:
+        lines.append("FX mode per year:")
+        lines.append("")
+        lines.append("| Year | Mode | Annual USD/CZK |")
+        lines.append("|------|------|----------------|")
+        for year in sorted(fx.mode_by_year):
+            mode = fx.mode_by_year[year]
+            rate_cell = str(fx.annual_rates[year]) if mode == "annual" and year in fx.annual_rates else "—"
+            lines.append(f"| {year} | {mode} | {rate_cell} |")
+        lines.append("")
+
+    has_daily = any(mode == "daily" for mode in fx.mode_by_year.values())
+    if has_daily:
         if fx.daily_file is not None:
-            lines.append(f"Daily CNB rates loaded from: `{fx.daily_file.name}` (and any sibling `cnb_*.txt`).")
+            lines.append(f"Daily CNB rates loaded from `{fx.daily_file.name}` (and any sibling `cnb_*.txt`).")
         else:
             lines.append("Daily CNB rates loaded from configured directory.")
         lines.append("Resolution: for a given date, the latest available CNB rate on or before that date is used.")
-    else:
-        if fx.annual_rates:
-            lines.append("Annual USD/CZK rates:")
-            lines.append("")
-            lines.append("| Year | USD/CZK |")
-            lines.append("|------|---------|")
-            for year in sorted(fx.annual_rates):
-                lines.append(f"| {year} | {fx.annual_rates[year]} |")
-        else:
-            lines.append("No annual rates configured.")
+
     return "\n".join(lines)
 
 

@@ -87,12 +87,17 @@ def _load_all_cnb_daily_usd_rates(fx_daily_file: Path) -> Dict[date, Decimal]:
 
 
 def load_fx_rate_book(fx_config: FxConfig) -> FxRateBook:
-    book = FxRateBook(mode=fx_config.mode, daily_file=fx_config.daily_file, annual_rates=dict(fx_config.annual_rates))
-    if fx_config.mode != "daily":
+    book = FxRateBook(
+        mode_by_year=dict(fx_config.mode_by_year),
+        daily_file=fx_config.daily_file,
+        annual_rates=dict(fx_config.annual_rates),
+    )
+    has_daily_year = any(mode == "daily" for mode in fx_config.mode_by_year.values())
+    if not has_daily_year:
         return book
 
     if fx_config.daily_file is None:
-        raise ValueError("tax_methods.toml: 'fx_daily_file' is required when fx_mode = 'daily'")
+        raise ValueError("tax_methods.toml: 'fx_daily_file' is required when any year uses fx_mode_by_year = 'daily'")
     if not fx_config.daily_file.exists():
         raise FileNotFoundError(f"FX daily file does not exist: {fx_config.daily_file}")
 
@@ -102,15 +107,21 @@ def load_fx_rate_book(fx_config: FxConfig) -> FxRateBook:
 
 
 def resolve_usd_to_czk_rate(fx_rate_book: FxRateBook, value_date: date) -> Decimal:
-    annual_rate = fx_rate_book.annual_rates.get(value_date.year)
-    if fx_rate_book.mode == "annual":
+    year = value_date.year
+    mode = fx_rate_book.mode_by_year.get(year)
+    if mode is None:
+        raise ValueError(f"Missing fx_mode_by_year entry for year {year}")
+
+    if mode == "annual":
+        annual_rate = fx_rate_book.annual_rates.get(year)
         if annual_rate is None:
-            raise ValueError(f"Missing annual FX rate for year {value_date.year}")
+            raise ValueError(f"Missing annual FX rate for year {year}")
         return annual_rate
 
     matched_index = bisect_right(fx_rate_book.daily_dates, value_date) - 1
     if matched_index >= 0:
         matched_date = fx_rate_book.daily_dates[matched_index]
-        return fx_rate_book.daily_rates_by_date[matched_date]
+        if matched_date.year == year or matched_date <= value_date:
+            return fx_rate_book.daily_rates_by_date[matched_date]
 
     raise ValueError(f"Missing daily FX rate for {value_date.isoformat()} in {fx_rate_book.daily_file}")

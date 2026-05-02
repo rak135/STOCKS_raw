@@ -57,7 +57,9 @@ def test_tax_config_accepts_time_test_max_label(tmp_path):
     toml_path = tmp_path / "tax_methods.toml"
     toml_path.write_text(
         'current_year = 2026\n'
-        'fx_mode = "annual"\n'
+        '\n'
+        '[fx_mode_by_year]\n'
+        '2025 = "annual"\n'
         '\n'
         '[fx_annual_rates]\n'
         '2025 = 24.5\n'
@@ -71,7 +73,7 @@ def test_tax_config_accepts_time_test_max_label(tmp_path):
 
     assert config.current_year == 2026
     assert config.methods_by_ticker["PLTR"][2025] == "time_test_max"
-    assert config.fx_config.mode == "annual"
+    assert config.fx_config.mode_by_year == {2025: "annual"}
     assert config.fx_config.annual_rates[2025] == Decimal("24.5")
 
 
@@ -86,7 +88,7 @@ def test_daily_fx_uses_previous_available_cnb_day(tmp_path):
     )
 
     fx_rate_book = load_fx_rate_book(
-        FxConfig(mode="daily", daily_file=fx_file, annual_rates={})
+        FxConfig(mode_by_year={2025: "daily"}, daily_file=fx_file, annual_rates={})
     )
 
     assert resolve_usd_to_czk_rate(fx_rate_book, date(2025, 1, 4)) == Decimal("24.427")
@@ -108,7 +110,7 @@ def test_daily_fx_loads_sibling_cnb_files_for_multiple_years(tmp_path):
     )
 
     fx_rate_book = load_fx_rate_book(
-        FxConfig(mode="daily", daily_file=fx_dir / "cnb_2025.txt", annual_rates={})
+        FxConfig(mode_by_year={2024: "daily", 2025: "daily"}, daily_file=fx_dir / "cnb_2025.txt", annual_rates={})
     )
 
     assert resolve_usd_to_czk_rate(fx_rate_book, date(2024, 12, 30)) == Decimal("23.280")
@@ -141,4 +143,10 @@ def test_validate_tax_config_reports_missing_years(tx_factory):
 
     errors = validate_tax_config(grouped, config)
 
-    assert errors == ["ticker 'TEST' is missing tax method for year 2024", "ticker 'TEST' is missing tax method for year 2025"]
+    # First the FX entries are missing for the required years; then the ticker method gaps.
+    assert errors == [
+        "fx_mode_by_year is missing entry for year 2024",
+        "fx_mode_by_year is missing entry for year 2025",
+        "ticker 'TEST' is missing tax method for year 2024",
+        "ticker 'TEST' is missing tax method for year 2025",
+    ]
