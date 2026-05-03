@@ -10,6 +10,40 @@ from stock_tax_report.analysis.trade_value import (
 )
 from stock_tax_report.domain.analysis import TickerAnalysis, YearSummary
 from stock_tax_report.domain.fx import FxRateBook
+from stock_tax_report.domain.matches import SellMatch
+
+
+def _compute_fail_income_costs(
+    sell_matches: List[SellMatch],
+    fx_rate_book: FxRateBook,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    fail_income = Decimal("0")
+    fail_income_czk = Decimal("0")
+    fail_costs = Decimal("0")
+    fail_costs_czk = Decimal("0")
+
+    for sell_match in sell_matches:
+        for match in sell_match.matches:
+            if match.time_test_passed:
+                continue
+            income = _compute_trade_value(match.matched_qty, match.sell_price)
+            income_czk = _compute_trade_value_czk(
+                match.matched_qty, match.sell_price, sell_match.sell_date, fx_rate_book
+            )
+            costs = _compute_trade_value(match.matched_qty, match.buy_price)
+            costs_czk = _compute_trade_value_czk(
+                match.matched_qty, match.buy_price, match.buy_date, fx_rate_book
+            )
+            assert income is not None
+            assert income_czk is not None
+            assert costs is not None
+            assert costs_czk is not None
+            fail_income += income
+            fail_income_czk += income_czk
+            fail_costs += costs
+            fail_costs_czk += costs_czk
+
+    return fail_income, fail_income_czk, fail_costs, fail_costs_czk
 
 
 def _compute_year_summary(
@@ -29,6 +63,10 @@ def _compute_year_summary(
             total_pl_czk=None,
             taxable_pl=None,
             taxable_pl_czk=None,
+            fail_income=None,
+            fail_income_czk=None,
+            fail_costs=None,
+            fail_costs_czk=None,
             over_three_year_pl=None,
             over_three_year_pl_czk=None,
         )
@@ -58,6 +96,9 @@ def _compute_year_summary(
         ),
         Decimal("0"),
     )
+    fail_income, fail_income_czk, fail_costs, fail_costs_czk = _compute_fail_income_costs(
+        sell_matches, fx_rate_book
+    )
     return YearSummary(
         total_income=total_income,
         total_income_czk=total_income_czk,
@@ -65,6 +106,10 @@ def _compute_year_summary(
         total_pl_czk=total_pl_czk,
         taxable_pl=taxable_pl,
         taxable_pl_czk=total_pl_czk - over_three_year_pl_czk,
+        fail_income=fail_income,
+        fail_income_czk=fail_income_czk,
+        fail_costs=fail_costs,
+        fail_costs_czk=fail_costs_czk,
         over_three_year_pl=over_three_year_pl,
         over_three_year_pl_czk=over_three_year_pl_czk,
     )
@@ -98,6 +143,10 @@ def _compute_aggregate_year_summaries(
             total_pl_czk=_sum_optional_decimals([summary.total_pl_czk for summary in summaries]),
             taxable_pl=_sum_optional_decimals([summary.taxable_pl for summary in summaries]),
             taxable_pl_czk=_sum_optional_decimals([summary.taxable_pl_czk for summary in summaries]),
+            fail_income=_sum_optional_decimals([summary.fail_income for summary in summaries]),
+            fail_income_czk=_sum_optional_decimals([summary.fail_income_czk for summary in summaries]),
+            fail_costs=_sum_optional_decimals([summary.fail_costs for summary in summaries]),
+            fail_costs_czk=_sum_optional_decimals([summary.fail_costs_czk for summary in summaries]),
             over_three_year_pl=_sum_optional_decimals([summary.over_three_year_pl for summary in summaries]),
             over_three_year_pl_czk=_sum_optional_decimals([summary.over_three_year_pl_czk for summary in summaries]),
         )

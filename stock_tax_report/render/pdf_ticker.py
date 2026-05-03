@@ -33,22 +33,34 @@ from stock_tax_report.render.pdf_styles import (
 
 def _build_year_summary_table(summary: YearSummary):
     from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
     from reportlab.platypus import Table, TableStyle
 
+    header_style = ParagraphStyle(
+        "YearSummaryHeader",
+        fontName="Helvetica-Bold",
+        fontSize=6,
+        leading=7,
+    )
     rows = [[
-        "Income USD/CZK",
-        "Profit/Loss USD/CZK",
-        "3 years rule PASS USD/CZK",
-        "3 years rule FAIL USD/CZK",
+        Paragraph("Income<br/>USD/CZK", header_style),
+        Paragraph("Profit/Loss<br/>USD/CZK", header_style),
+        Paragraph("3 years rule PASS<br/>USD/CZK", header_style),
+        Paragraph("3 years rule FAIL<br/>USD/CZK", header_style),
+        Paragraph("Income 3y FAIL<br/>USD/CZK", header_style),
+        Paragraph("Costs 3y FAIL<br/>USD/CZK", header_style),
     ]]
     rows.append([
         _fmt_usd_czk_pair(summary.total_income, summary.total_income_czk),
         _fmt_usd_czk_pair(summary.total_pl, summary.total_pl_czk),
         _fmt_usd_czk_pair(summary.over_three_year_pl, summary.over_three_year_pl_czk),
         _fmt_usd_czk_pair(summary.taxable_pl, summary.taxable_pl_czk),
+        _fmt_usd_czk_pair(summary.fail_income, summary.fail_income_czk),
+        _fmt_usd_czk_pair(summary.fail_costs, summary.fail_costs_czk),
     ])
 
-    table = Table(rows, repeatRows=1, colWidths=[125, 125, 125, 125], hAlign="LEFT")
+    table = Table(rows, repeatRows=1, colWidths=[84, 84, 84, 84, 84, 84], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [

@@ -34,13 +34,21 @@ def test_write_summary_emits_expected_header_and_row(tmp_path: Path, simple_anal
     path = write_summary(tmp_path, [simple_analysis], book)
 
     content = path.read_text(encoding="utf-8").splitlines()
-    assert content[0] == "ticker,pdf_file,fx_modes,year_count,sell_count,ignored_current_year_sell_count,open_qty,source_files"
+    assert content[0] == (
+        "ticker,pdf_file,fx_modes,year_count,sell_count,"
+        "ignored_current_year_sell_count,open_qty,income_3y_fail_usd,"
+        "income_3y_fail_czk,costs_3y_fail_usd,costs_3y_fail_czk,source_files"
+    )
     fields = content[1].split(",")
     assert fields[0] == "AAA"
     assert fields[1] == "AAA.pdf"
     assert fields[2].startswith("2024=annual")  # per-year encoded
     assert "2025=annual" in fields[2]
     assert fields[5] == "1"  # one ignored 2026 sell
+    assert fields[7] == "30.00"
+    assert fields[8] == "750.00"
+    assert fields[9] == "10.00"
+    assert fields[10] == "230.00"
 
 
 @pytest.mark.unit

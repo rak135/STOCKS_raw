@@ -17,6 +17,10 @@ class YearSummary:
     total_pl_czk: Optional[Decimal]
     taxable_pl: Optional[Decimal]
     taxable_pl_czk: Optional[Decimal]
+    fail_income: Optional[Decimal]
+    fail_income_czk: Optional[Decimal]
+    fail_costs: Optional[Decimal]
+    fail_costs_czk: Optional[Decimal]
     over_three_year_pl: Optional[Decimal]
     over_three_year_pl_czk: Optional[Decimal]
 

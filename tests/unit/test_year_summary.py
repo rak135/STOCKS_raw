@@ -46,6 +46,8 @@ def test_year_summary_skips_pl_for_current_year(tx_factory):
     assert summary.total_income_czk is None
     assert summary.total_pl is None
     assert summary.taxable_pl is None
+    assert summary.fail_income is None
+    assert summary.fail_costs is None
     assert summary.over_three_year_pl is None
 
 
@@ -68,6 +70,11 @@ def test_year_summary_separates_time_test_pass_pl(tx_factory):
     assert summary.over_three_year_pl == Decimal("40")
     # Taxable: total - pass = 10
     assert summary.taxable_pl == Decimal("10")
+    # FAIL lot only: sold for 50, bought for 40.
+    assert summary.fail_income == Decimal("50")
+    assert summary.fail_income_czk == Decimal("1250")
+    assert summary.fail_costs == Decimal("40")
+    assert summary.fail_costs_czk == Decimal("920")
 
 
 @pytest.mark.unit
