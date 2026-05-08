@@ -1,10 +1,20 @@
 # Ignore files with a dot in the name.
 *.*
 
-# Ignore dot-named folders in this repository.
-.csv/
-.pdf exports tax methods/
-.pytest_cache/
-
-# Keep this ignore file tracked.
+# Keep selected dot-named files and folders tracked.
 !.gitignore
+!.csv/
+!.csv/.gitkeep
+!.pdf exports tax methods/
+!.pdf exports tax methods/.gitkeep
+
+# Keep these folders, but ignore their generated contents.
+.csv/*
+!.csv/.gitkeep
+!.csv/fx/
+!.csv/fx/*
+.pdf exports tax methods/*
+!.pdf exports tax methods/.gitkeep
+
+# Ignore generated cache folders.
+.pytest_cache/
