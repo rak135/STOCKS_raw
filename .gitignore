@@ -1,0 +1,6 @@
+# Ignore files and directories with a dot in the name.
+*.*
+.*
+
+# Keep this ignore file tracked.
+!.gitignore
