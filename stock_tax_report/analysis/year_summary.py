@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -13,19 +14,32 @@ from stock_tax_report.domain.fx import FxRateBook
 from stock_tax_report.domain.matches import SellMatch
 
 
-def _compute_fail_income_costs(
+@dataclass
+class _IncomeCosts:
+    income: Decimal = Decimal("0")
+    income_czk: Decimal = Decimal("0")
+    costs: Decimal = Decimal("0")
+    costs_czk: Decimal = Decimal("0")
+
+    @property
+    def profit(self) -> Decimal:
+        return self.income - self.costs
+
+    @property
+    def profit_czk(self) -> Decimal:
+        return self.income_czk - self.costs_czk
+
+
+def _compute_income_costs_by_time_test(
     sell_matches: List[SellMatch],
     fx_rate_book: FxRateBook,
-) -> tuple[Decimal, Decimal, Decimal, Decimal]:
-    fail_income = Decimal("0")
-    fail_income_czk = Decimal("0")
-    fail_costs = Decimal("0")
-    fail_costs_czk = Decimal("0")
+) -> tuple[_IncomeCosts, _IncomeCosts, _IncomeCosts]:
+    total = _IncomeCosts()
+    passed = _IncomeCosts()
+    failed = _IncomeCosts()
 
     for sell_match in sell_matches:
         for match in sell_match.matches:
-            if match.time_test_passed:
-                continue
             income = _compute_trade_value(match.matched_qty, match.sell_price)
             income_czk = _compute_trade_value_czk(
                 match.matched_qty, match.sell_price, sell_match.sell_date, fx_rate_book
@@ -38,12 +52,15 @@ def _compute_fail_income_costs(
             assert income_czk is not None
             assert costs is not None
             assert costs_czk is not None
-            fail_income += income
-            fail_income_czk += income_czk
-            fail_costs += costs
-            fail_costs_czk += costs_czk
 
-    return fail_income, fail_income_czk, fail_costs, fail_costs_czk
+            target = passed if match.time_test_passed else failed
+            for bucket in (total, target):
+                bucket.income += income
+                bucket.income_czk += income_czk
+                bucket.costs += costs
+                bucket.costs_czk += costs_czk
+
+    return total, passed, failed
 
 
 def _compute_year_summary(
@@ -59,8 +76,14 @@ def _compute_year_summary(
         return YearSummary(
             total_income=total_income,
             total_income_czk=None,
+            total_costs=None,
+            total_costs_czk=None,
             total_pl=None,
             total_pl_czk=None,
+            pass_income=None,
+            pass_income_czk=None,
+            pass_costs=None,
+            pass_costs_czk=None,
             taxable_pl=None,
             taxable_pl_czk=None,
             fail_income=None,
@@ -96,20 +119,24 @@ def _compute_year_summary(
         ),
         Decimal("0"),
     )
-    fail_income, fail_income_czk, fail_costs, fail_costs_czk = _compute_fail_income_costs(
-        sell_matches, fx_rate_book
-    )
+    total, passed, failed = _compute_income_costs_by_time_test(sell_matches, fx_rate_book)
     return YearSummary(
         total_income=total_income,
         total_income_czk=total_income_czk,
+        total_costs=total.costs,
+        total_costs_czk=total.costs_czk,
         total_pl=total_pl,
         total_pl_czk=total_pl_czk,
+        pass_income=passed.income,
+        pass_income_czk=passed.income_czk,
+        pass_costs=passed.costs,
+        pass_costs_czk=passed.costs_czk,
         taxable_pl=taxable_pl,
         taxable_pl_czk=total_pl_czk - over_three_year_pl_czk,
-        fail_income=fail_income,
-        fail_income_czk=fail_income_czk,
-        fail_costs=fail_costs,
-        fail_costs_czk=fail_costs_czk,
+        fail_income=failed.income,
+        fail_income_czk=failed.income_czk,
+        fail_costs=failed.costs,
+        fail_costs_czk=failed.costs_czk,
         over_three_year_pl=over_three_year_pl,
         over_three_year_pl_czk=over_three_year_pl_czk,
     )
@@ -139,8 +166,14 @@ def _compute_aggregate_year_summaries(
         aggregated[year] = YearSummary(
             total_income=sum((summary.total_income for summary in summaries), Decimal("0")),
             total_income_czk=_sum_optional_decimals([summary.total_income_czk for summary in summaries]),
+            total_costs=_sum_optional_decimals([summary.total_costs for summary in summaries]),
+            total_costs_czk=_sum_optional_decimals([summary.total_costs_czk for summary in summaries]),
             total_pl=_sum_optional_decimals([summary.total_pl for summary in summaries]),
             total_pl_czk=_sum_optional_decimals([summary.total_pl_czk for summary in summaries]),
+            pass_income=_sum_optional_decimals([summary.pass_income for summary in summaries]),
+            pass_income_czk=_sum_optional_decimals([summary.pass_income_czk for summary in summaries]),
+            pass_costs=_sum_optional_decimals([summary.pass_costs for summary in summaries]),
+            pass_costs_czk=_sum_optional_decimals([summary.pass_costs_czk for summary in summaries]),
             taxable_pl=_sum_optional_decimals([summary.taxable_pl for summary in summaries]),
             taxable_pl_czk=_sum_optional_decimals([summary.taxable_pl_czk for summary in summaries]),
             fail_income=_sum_optional_decimals([summary.fail_income for summary in summaries]),

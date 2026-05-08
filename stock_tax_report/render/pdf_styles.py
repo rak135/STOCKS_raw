@@ -89,6 +89,15 @@ def create_all_tickers_pdf_styles():
     styles = getSampleStyleSheet()
     title_style = styles["Heading4"]
     title_style.textColor = colors.black
+    year_style = ParagraphStyle(
+        "SummaryYearHeading",
+        parent=styles["Heading5"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=11,
+        textColor=colors.black,
+        spaceAfter=0,
+    )
     note_style = ParagraphStyle(
         "SummaryNote",
         parent=styles["BodyText"],
@@ -99,5 +108,6 @@ def create_all_tickers_pdf_styles():
     )
     return {
         "title_style": title_style,
+        "year_style": year_style,
         "note_style": note_style,
     }

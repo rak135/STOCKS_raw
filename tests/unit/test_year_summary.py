@@ -44,7 +44,9 @@ def test_year_summary_skips_pl_for_current_year(tx_factory):
 
     assert summary.total_income == Decimal("20")
     assert summary.total_income_czk is None
+    assert summary.total_costs is None
     assert summary.total_pl is None
+    assert summary.pass_income is None
     assert summary.taxable_pl is None
     assert summary.fail_income is None
     assert summary.fail_costs is None
@@ -65,9 +67,19 @@ def test_year_summary_separates_time_test_pass_pl(tx_factory):
     summary = _compute_year_summary(analysis, year=2025, current_year=2026, fx_rate_book=book)
 
     # Total P/L: (50-10) + (50-40) = 50
+    assert summary.total_income == Decimal("100")
+    assert summary.total_income_czk == Decimal("2500")
+    assert summary.total_costs == Decimal("50")
+    assert summary.total_costs_czk == Decimal("1120")
     assert summary.total_pl == Decimal("50")
+    assert summary.total_pl_czk == Decimal("1380")
     # Pass: only 2021 lot (>3y) -> 50-10 = 40
+    assert summary.pass_income == Decimal("50")
+    assert summary.pass_income_czk == Decimal("1250")
+    assert summary.pass_costs == Decimal("10")
+    assert summary.pass_costs_czk == Decimal("200")
     assert summary.over_three_year_pl == Decimal("40")
+    assert summary.over_three_year_pl_czk == Decimal("1050")
     # Taxable: total - pass = 10
     assert summary.taxable_pl == Decimal("10")
     # FAIL lot only: sold for 50, bought for 40.

@@ -13,8 +13,14 @@ from stock_tax_report.domain.transactions import Transaction
 class YearSummary:
     total_income: Decimal
     total_income_czk: Optional[Decimal]
+    total_costs: Optional[Decimal]
+    total_costs_czk: Optional[Decimal]
     total_pl: Optional[Decimal]
     total_pl_czk: Optional[Decimal]
+    pass_income: Optional[Decimal]
+    pass_income_czk: Optional[Decimal]
+    pass_costs: Optional[Decimal]
+    pass_costs_czk: Optional[Decimal]
     taxable_pl: Optional[Decimal]
     taxable_pl_czk: Optional[Decimal]
     fail_income: Optional[Decimal]

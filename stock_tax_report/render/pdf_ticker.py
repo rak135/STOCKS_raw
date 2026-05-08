@@ -31,44 +31,26 @@ from stock_tax_report.render.pdf_styles import (
 )
 
 
-def _build_year_summary_table(summary: YearSummary):
+def _build_year_metric_table(label: str, income, income_czk, costs, costs_czk, profit, profit_czk):
     from reportlab.lib import colors
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Paragraph
     from reportlab.platypus import Table, TableStyle
 
-    header_style = ParagraphStyle(
-        "YearSummaryHeader",
-        fontName="Helvetica-Bold",
-        fontSize=6,
-        leading=7,
-    )
-    rows = [[
-        Paragraph("Income<br/>USD/CZK", header_style),
-        Paragraph("Profit/Loss<br/>USD/CZK", header_style),
-        Paragraph("3 years rule PASS<br/>USD/CZK", header_style),
-        Paragraph("3 years rule FAIL<br/>USD/CZK", header_style),
-        Paragraph("Income 3y FAIL<br/>USD/CZK", header_style),
-        Paragraph("Costs 3y FAIL<br/>USD/CZK", header_style),
-    ]]
-    rows.append([
-        _fmt_usd_czk_pair(summary.total_income, summary.total_income_czk),
-        _fmt_usd_czk_pair(summary.total_pl, summary.total_pl_czk),
-        _fmt_usd_czk_pair(summary.over_three_year_pl, summary.over_three_year_pl_czk),
-        _fmt_usd_czk_pair(summary.taxable_pl, summary.taxable_pl_czk),
-        _fmt_usd_czk_pair(summary.fail_income, summary.fail_income_czk),
-        _fmt_usd_czk_pair(summary.fail_costs, summary.fail_costs_czk),
-    ])
+    rows = [
+        [label, "Income USD/CZK", "Costs USD/CZK", "Profit USD/CZK"],
+        ["", _fmt_usd_czk_pair(income, income_czk), _fmt_usd_czk_pair(costs, costs_czk), _fmt_usd_czk_pair(profit, profit_czk)],
+    ]
 
-    table = Table(rows, repeatRows=1, colWidths=[84, 84, 84, 84, 84, 84], hAlign="LEFT")
+    table = Table(rows, repeatRows=1, colWidths=[58, 148, 148, 148], hAlign="LEFT")
+    background = colors.HexColor("#eeeeee") if label == "3y FAIL" else colors.white
     table.setStyle(
         TableStyle(
             [
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, 0), (-1, -1), background),
                 ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, -1), 6.5),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -76,6 +58,38 @@ def _build_year_summary_table(summary: YearSummary):
         )
     )
     return table
+
+
+def _build_year_summary_tables(summary: YearSummary):
+    return [
+        _build_year_metric_table(
+            "Total",
+            summary.total_income,
+            summary.total_income_czk,
+            summary.total_costs,
+            summary.total_costs_czk,
+            summary.total_pl,
+            summary.total_pl_czk,
+        ),
+        _build_year_metric_table(
+            "3y PASS",
+            summary.pass_income,
+            summary.pass_income_czk,
+            summary.pass_costs,
+            summary.pass_costs_czk,
+            summary.over_three_year_pl,
+            summary.over_three_year_pl_czk,
+        ),
+        _build_year_metric_table(
+            "3y FAIL",
+            summary.fail_income,
+            summary.fail_income_czk,
+            summary.fail_costs,
+            summary.fail_costs_czk,
+            summary.taxable_pl,
+            summary.taxable_pl_czk,
+        ),
+    ]
 
 
 def _build_year_history_table(
@@ -297,14 +311,20 @@ def build_pdf_for_ticker(
             heading = f"{heading} | Method: {METHOD_LABELS[analysis.year_methods[year]]} | {_year_fx_label(year, current_year, fx_rate_book)}"
         else:
             heading = f"{heading} | {_year_fx_label(year, current_year, fx_rate_book)}"
-        year_summary_table = _build_year_summary_table(_compute_year_summary(analysis, year, current_year, fx_rate_book))
+        year_summary_tables = _build_year_summary_tables(
+            _compute_year_summary(analysis, year, current_year, fx_rate_book)
+        )
         story.append(CondPageBreak(170))
         story.append(
             KeepTogether(
                 [
                     Paragraph(heading, year_style),
                     Spacer(1, 4),
-                    year_summary_table,
+                    year_summary_tables[0],
+                    Spacer(1, 3),
+                    year_summary_tables[1],
+                    Spacer(1, 3),
+                    year_summary_tables[2],
                 ]
             )
         )
