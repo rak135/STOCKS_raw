@@ -1,6 +1,10 @@
-# Ignore files and directories with a dot in the name.
+# Ignore files with a dot in the name.
 *.*
-.*
+
+# Ignore dot-named folders in this repository.
+.csv/
+.pdf exports tax methods/
+.pytest_cache/
 
 # Keep this ignore file tracked.
 !.gitignore
