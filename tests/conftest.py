@@ -40,6 +40,21 @@ def tx_factory():
     return _make
 
 
+@pytest.fixture(autouse=True)
+def disable_external_market_data(monkeypatch):
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    import stock_tax_report.pipeline as pipeline
+
+    monkeypatch.setattr(
+        pipeline,
+        "fetch_market_prices",
+        lambda tickers, *, fetched_at, config_file=None: (
+            None,
+            ["Portfolio allocation skipped in tests"],
+        ),
+    )
+
+
 def write_portfolio_csv(file_path: Path, rows: Iterable[dict[str, str]]) -> None:
     fieldnames = [
         "Symbol",

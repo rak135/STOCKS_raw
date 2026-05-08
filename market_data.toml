@@ -1,0 +1,6 @@
+provider = "twelvedata"
+twelve_data_api_key = "4b1a8ef6792c40548ca0404c2da23a37"
+
+# Free Twelve Data default limits.
+twelve_data_batch_size = 8
+twelve_data_batch_sleep_seconds = 61

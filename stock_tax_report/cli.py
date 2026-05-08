@@ -133,10 +133,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Ticker PDFs created: {result.pdfs_created}")
     print(f"Ignored current-year SELL transactions: {result.ignored_current_year_sells}")
     print(f"All-tickers year summary PDF: {result.all_tickers_pdf_path}")
+    if result.portfolio_allocation_pdf_path is not None:
+        print(f"Portfolio allocation PDF: {result.portfolio_allocation_pdf_path}")
+    if result.market_prices_snapshot_path is not None:
+        print(f"Market prices snapshot: {result.market_prices_snapshot_path}")
     for pdf_path in result.pdf_paths:
         print(f"PDF: {pdf_path}")
     print(f"Summary: {result.summary_csv_path}")
     print(f"Warnings: {result.warnings_txt_path}")
+    if result.backup_dir is not None:
+        print(f"Backup: {result.backup_dir}")
     if result.bundle_dir is not None:
         print(f"Bundle: {result.bundle_dir}")
 

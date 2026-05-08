@@ -9,8 +9,15 @@ import pytest
 from stock_tax_report.analysis.ticker_analysis import analyze_ticker
 from stock_tax_report.domain.config import TaxConfig
 from stock_tax_report.domain.fx import FxConfig
+from stock_tax_report.domain.portfolio import (
+    MarketPrice,
+    MarketPriceSnapshot,
+    PortfolioAllocationItem,
+    PortfolioAllocationResult,
+)
 from stock_tax_report.io.fx_loader import load_fx_rate_book
 from stock_tax_report.render.pdf_all_tickers import build_all_tickers_year_summary_pdf
+from stock_tax_report.render.pdf_portfolio_allocation import build_portfolio_allocation_pdf
 from stock_tax_report.render.pdf_ticker import build_pdf_for_ticker
 
 
@@ -76,3 +83,33 @@ def test_pdf_for_ticker_with_no_history_still_renders(tmp_path: Path, tx_factory
     pdf_path = build_pdf_for_ticker(analysis, tmp_path, datetime(2026, 4, 1, 12, 0, 0), 2026, book)
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 0
+
+
+@pytest.mark.unit
+def test_build_portfolio_allocation_pdf_writes_pdf(tmp_path: Path):
+    generated_at = datetime(2026, 5, 8, 12, 0, 0)
+    snapshot = MarketPriceSnapshot(
+        provider="twelvedata",
+        fetched_at=generated_at,
+        prices=[
+            MarketPrice("AAA", Decimal("10"), "twelvedata", generated_at),
+            MarketPrice("BBB", Decimal("30"), "twelvedata", generated_at),
+        ],
+        errors=[],
+    )
+    allocation = PortfolioAllocationResult(
+        items=[
+            PortfolioAllocationItem("BBB", Decimal("1"), Decimal("30"), Decimal("30"), Decimal("60.0")),
+            PortfolioAllocationItem("AAA", Decimal("2"), Decimal("10"), Decimal("20"), Decimal("40.0")),
+        ],
+        total_value_usd=Decimal("50"),
+        price_snapshot=snapshot,
+        warnings=[],
+    )
+
+    pdf_path = build_portfolio_allocation_pdf(allocation, tmp_path, generated_at)
+
+    assert pdf_path.name == "_portfolio_allocation.pdf"
+    data = pdf_path.read_bytes()
+    assert data.startswith(b"%PDF-")
+    assert b"%%EOF" in data

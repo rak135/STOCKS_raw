@@ -1,8 +1,13 @@
 # Ignore files with a dot in the name.
 *.*
 
+# Keep Python source and tests visible to git.
+!stock_tax_report/**/*.py
+!tests/**/*.py
+
 # Keep selected dot-named files and folders tracked.
 !.gitignore
+!market_data.toml
 !.csv/
 !.csv/.gitkeep
 !.pdf exports tax methods/
@@ -18,3 +23,6 @@
 
 # Ignore generated cache folders.
 .pytest_cache/
+
+# Ignore export backups.
+.backup/

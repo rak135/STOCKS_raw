@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Literal
 
 
-OutputArtifactKind = Literal["pdf", "csv", "txt"]
+OutputArtifactKind = Literal["pdf", "csv", "json", "txt"]
 SourceEvidenceKind = Literal[
     "broker_csv",
     "broker_pdf",

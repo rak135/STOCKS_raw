@@ -4,6 +4,7 @@ Repository obsahuje Python balíček pro export daňových reportů z normalizov
 
 - PDF report pro každý ticker
 - souhrnné PDF za všechny tickery po letech
+- PDF portfolio allocation podle posledních dostupných USD cen
 - CSV summary exportu
 - TXT výstrahy a poznámky z parsování
 - volitelný evidence bundle `tax_<year>/`
@@ -15,6 +16,7 @@ Hlavní entrypoint:
 Hlavní konfigurace:
 
 - `tax_methods.toml`
+- `market_data.toml`
 - volitelně `report_paths.toml`
 
 Výchozí vstupní CSV adresář:
@@ -50,8 +52,10 @@ py -m pip install reportlab
 - pro každý historický rok použije matching metodu nastavenou pro daný ticker/rok
 - vytvoří jedno PDF pro každý ticker
 - vytvoří souhrnné PDF za všechny tickery
+- stáhne poslední dostupné ceny otevřených pozic a vytvoří portfolio allocation PDF
 - vytvoří `_export_summary.csv`
 - vytvoří `_export_warnings.txt`
+- vytvoří zálohu exportovaných souborů do `.backup\export_<datum_exportu>`
 - pokud není vypnutý bundle, sestaví evidence bundle `tax_<current_year>/`
 
 Podporované matching metody:
@@ -204,10 +208,24 @@ Pipeline generuje do výstupního adresáře:
 
 - `TICKER.pdf`
 - `_all_tickers_year_summary.pdf`
+- `_portfolio_allocation.pdf` pokud jsou dostupné market ceny otevřených pozic
+- `_market_prices_snapshot.json` pokud se stahovaly market ceny
 - `_export_summary.csv`
 - `_export_warnings.txt`
 
 Před exportem se předchozí exportní artefakty ve výstupním adresáři vyčistí.
+
+### Export Backup
+
+Po každém úspěšném exportu se všechny soubory z výstupního adresáře zkopírují do zálohy:
+
+```text
+.backup\export_YYYY-MM-DD_HH-MM-SS
+```
+
+Čas v názvu odpovídá času exportu. Pokud už složka se stejným časem existuje, přidá se suffix `_2`, `_3`, atd. Každá záloha obsahuje také `_backup_manifest.txt` se seznamem zkopírovaných souborů.
+
+Adresář `.backup` je git ignorovaný.
 
 ### Ticker PDF
 
@@ -232,6 +250,42 @@ Souhrnné PDF obsahuje po letech:
 - `3 years rule FAIL USD/CZK`
 
 CZK součty se počítají z jednotlivých transakcí a matchů, ne jedním přepočtem agregované USD sumy.
+
+### Portfolio Allocation
+
+Portfolio allocation PDF používá aktuální USD ceny z Twelve Data `/price` endpointu.
+
+Konfigurace je v repovém souboru `market_data.toml`:
+
+```toml
+provider = "twelvedata"
+twelve_data_api_key = "..."
+twelve_data_batch_size = 8
+twelve_data_batch_sleep_seconds = 61
+```
+
+Spuštění:
+
+```powershell
+py -m stock_tax_report
+```
+
+Držené množství pro tento export se počítá jako skutečné portfolio množství `BUY - SELL` napříč všemi roky. Liší se tedy od tax-only `open_qty`, protože daňový report záměrně ignoruje SELL transakce v `current_year`.
+
+Env proměnná `TWELVE_DATA_API_KEY` má přednost před hodnotou v `market_data.toml`, pokud ji nastavíš ručně.
+
+Výchozí free-limit nastavení:
+
+- `twelve_data_batch_size = 8`
+- `twelve_data_batch_sleep_seconds = 61`
+
+Pokud máš vyšší tarif, můžeš tyto env proměnné zvýšit/snížit podle limitů svého plánu.
+
+Portfolio allocation výstup obsahuje:
+
+- koláčový graf podle tržní hodnoty pozic v USD
+- tabulku `Ticker`, `Open Qty`, `Price USD`, `Value USD`, `Allocation`
+- `_market_prices_snapshot.json` se staženými cenami, timestampem a případnými chybami provideru
 
 ### `_export_summary.csv`
 

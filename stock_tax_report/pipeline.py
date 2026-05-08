@@ -5,6 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from stock_tax_report.analysis.portfolio_allocation import (
+    build_portfolio_allocation,
+    compute_current_positions,
+)
 from stock_tax_report.analysis.ticker_analysis import analyze_ticker
 from stock_tax_report.bundle.assembler import assemble_bundle
 from stock_tax_report.bundle.layout import (
@@ -31,12 +35,18 @@ from stock_tax_report.io.csv_parser import (
     group_by_ticker,
 )
 from stock_tax_report.io.fx_loader import load_fx_rate_book
+from stock_tax_report.io.market_data import (
+    fetch_market_prices,
+    write_market_price_snapshot,
+)
 from stock_tax_report.io.tax_config_loader import (
     load_tax_config,
     validate_tax_config,
 )
+from stock_tax_report.render.backup import backup_exported_files
 from stock_tax_report.render.cleanup import _clear_previous_exports
 from stock_tax_report.render.pdf_all_tickers import build_all_tickers_year_summary_pdf
+from stock_tax_report.render.pdf_portfolio_allocation import build_portfolio_allocation_pdf
 from stock_tax_report.render.pdf_ticker import build_pdf_for_ticker
 from stock_tax_report.render.summary_csv import write_summary
 from stock_tax_report.render.warnings_txt import write_warnings
@@ -57,6 +67,9 @@ class PipelineResult:
     summary_csv_path: Path
     warnings_txt_path: Path
     all_tickers_pdf_path: Path
+    portfolio_allocation_pdf_path: Optional[Path] = None
+    market_prices_snapshot_path: Optional[Path] = None
+    backup_dir: Optional[Path] = None
     bundle_manifest: Optional[ReportBundleManifest] = None
     bundle_dir: Optional[Path] = None
 
@@ -137,6 +150,8 @@ def _output_artifacts(output_dir: Path) -> List[OutputArtifact]:
             kind = "pdf"
         elif suffix == ".csv":
             kind = "csv"
+        elif suffix == ".json":
+            kind = "json"
         else:
             kind = "txt"
         artifacts.append(
@@ -201,8 +216,41 @@ def run(
         analyses, output_dir, generated_at, config.current_year, fx_rate_book
     )
     summary_csv_path = write_summary(output_dir, analyses, fx_rate_book)
+
+    portfolio_warnings: List[str] = []
+    portfolio_allocation_pdf: Optional[Path] = None
+    market_prices_snapshot_path: Optional[Path] = None
+    current_positions = compute_current_positions(analyses)
+    if current_positions:
+        snapshot, provider_warnings = fetch_market_prices(
+            [position.ticker for position in current_positions],
+            fetched_at=generated_at,
+            config_file=PACKAGE_ROOT.parent / "market_data.toml",
+        )
+        portfolio_warnings.extend(provider_warnings)
+        if snapshot is not None:
+            market_prices_snapshot_path = write_market_price_snapshot(output_dir, snapshot)
+            allocation = build_portfolio_allocation(current_positions, snapshot)
+            portfolio_warnings.extend(
+                f"Portfolio allocation: {warning}" for warning in allocation.warnings
+            )
+            if allocation.items:
+                portfolio_allocation_pdf = build_portfolio_allocation_pdf(
+                    allocation, output_dir, generated_at
+                )
+            else:
+                portfolio_warnings.append(
+                    "Portfolio allocation skipped: no current market prices were available"
+                )
+
     warnings_txt_path = write_warnings(
-        output_dir, warnings, mapping_notes, analyses, generated_at
+        output_dir, warnings + portfolio_warnings, mapping_notes, analyses, generated_at
+    )
+
+    backup_dir = backup_exported_files(
+        output_dir,
+        output_dir.parent / ".backup",
+        generated_at,
     )
 
     bundle_manifest: Optional[ReportBundleManifest] = None
@@ -250,6 +298,9 @@ def run(
         summary_csv_path=summary_csv_path,
         warnings_txt_path=warnings_txt_path,
         all_tickers_pdf_path=all_tickers_pdf,
+        portfolio_allocation_pdf_path=portfolio_allocation_pdf,
+        market_prices_snapshot_path=market_prices_snapshot_path,
+        backup_dir=backup_dir,
         bundle_manifest=bundle_manifest,
         bundle_dir=bundle_dir,
     )
